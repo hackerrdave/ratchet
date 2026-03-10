@@ -1,0 +1,26 @@
+{
+  "name": "ratchet",
+  "version": "0.1.0",
+  "description": "Agentic optimization loop with high watermarking",
+  "type": "module",
+  "bin": {
+    "ratchet": "./src/cli.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun build --compile src/cli.ts --outfile dist/ratchet",
+    "build:all": "bun build --compile --target=bun-darwin-arm64 src/cli.ts --outfile dist/ratchet-macos && bun build --compile --target=bun-linux-x64 src/cli.ts --outfile dist/ratchet-linux && bun build --compile --target=bun-windows-x64 src/cli.ts --outfile dist/ratchet-windows.exe",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@clack/prompts": "^1.1.0",
+    "commander": "^14.0.3",
+    "csv-parse": "^6.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10",
+    "typescript": "^5.9.3"
+  }
+}
