@@ -8,6 +8,7 @@ import { diffCommand } from "./commands/diff.ts";
 import { showCommand } from "./commands/show.ts";
 import { checkoutCommand } from "./commands/checkout.ts";
 import { pauseCommand, resumeCommand } from "./commands/pause.ts";
+import { learningsCommand } from "./commands/learnings.ts";
 
 const program = new Command();
 
@@ -61,6 +62,12 @@ program
   .description("Restore lever to a specific iteration's best state")
   .option("--name <name>", "Name of the ratchet", "default")
   .action(checkoutCommand);
+
+program
+  .command("learnings")
+  .description("Show tactical learnings extracted from runs")
+  .option("--name <name>", "Name of the ratchet", "default")
+  .action(learningsCommand);
 
 program
   .command("pause")

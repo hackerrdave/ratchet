@@ -105,6 +105,7 @@ Each named ratchet gets its own spec, scorer, watermark, and history. Omitting `
 | `ratchet/<name>/scorer.sh` | Shell script that outputs a single float (higher = better) |
 | `ratchet/<name>/watermark.txt` | Current high watermark score |
 | `ratchet/<name>/progress.log` | JSONL log of every iteration |
+| `ratchet/<name>/learnings.md` | Tactical learnings extracted from runs |
 | `ratchet/<name>/best/` | Latest best version of the lever |
 | `ratchet/<name>/snapshots/` | Snapshot of the lever at each kept iteration |
 
@@ -230,6 +231,29 @@ ratchet show 3 --name classifier
 ratchet checkout 3 --name classifier
 ```
 
+### View Learnings
+
+After each run, Ratchet extracts tactical learnings from the progress log — what worked, what didn't, and why. These are fed back to the agent on subsequent runs.
+
+```bash
+ratchet learnings --name classifier
+```
+
+```markdown
+## What Works
+- **Few-shot examples outperform explicit rules** — iterations 1,3 tried verbose instructions
+  and scored lower; iteration 4 added a single worked example and jumped +0.0234
+
+## What Doesn't
+- **Explicit classification criteria degrade accuracy** — prescriptive rules overconstrain the model
+
+## Tactics
+- Use 2-3 worked examples covering diverse edge cases
+- Preserve JSON-only output constraint in all changes
+```
+
+Learnings are stored in `ratchet/<name>/learnings.md` and updated after each run.
+
 ### Pause and Resume
 
 ```bash
@@ -280,6 +304,7 @@ your-project/
     │   ├── scorer.sh           # Scoring script
     │   ├── watermark.txt       # Current high watermark
     │   ├── progress.log        # JSONL iteration history
+    │   ├── learnings.md          # Tactical learnings from runs
     │   ├── best/
     │   │   └── classifier.md   # Best lever state so far
     │   └── snapshots/

@@ -40,6 +40,10 @@ export function snapshotsDir(name: string = DEFAULT_NAME): string {
   return join(ratchetDir(name), "snapshots");
 }
 
+export function learningsPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "learnings.md");
+}
+
 // Legacy constants for backwards compat (map to default name)
 export const RATCHET_MD = ratchetMdPath();
 export const SCORER_SH = scorerShPath();

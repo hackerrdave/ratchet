@@ -13,6 +13,7 @@ import { runScorer } from "../lib/scorer.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
 import { appendProgress, snapshotLever, type ProgressEntry } from "../lib/progress.ts";
 import { runAgent } from "../lib/agent.ts";
+import { extractLearnings } from "../lib/learnings.ts";
 
 interface StartOptions {
   iterations: string;
@@ -196,4 +197,13 @@ export async function startCommand(options: StartOptions) {
   }
 
   console.log(`\nDone. ${kept} kept, ${discarded} discarded. Final watermark: ${watermark}`);
+
+  // Extract learnings from this run
+  process.stdout.write("Extracting learnings... ");
+  try {
+    await extractLearnings(cwd, model, name);
+    console.log("done.");
+  } catch (err) {
+    console.log(`skipped (${err})`);
+  }
 }

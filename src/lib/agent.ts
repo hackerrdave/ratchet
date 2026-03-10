@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { parseRatchetMd, ratchetMdPath, progressLogPath, DEFAULT_NAME } from "./config.ts";
+import { parseRatchetMd, ratchetMdPath, progressLogPath, learningsPath, DEFAULT_NAME } from "./config.ts";
 import { join } from "path";
 
 const MAX_TOKENS = 4096;
@@ -33,6 +33,14 @@ export async function runAgent(cwd: string, model: string, name: string = DEFAUL
     progressLog = "(no iterations yet)";
   }
 
+  // Read learnings from previous runs
+  let learnings = "";
+  try {
+    learnings = await Bun.file(join(cwd, learningsPath(name))).text();
+  } catch {
+    learnings = "";
+  }
+
   // Read any context files mentioned in RATCHET.md
   const contextSections: string[] = [];
   if (config.context) {
@@ -56,6 +64,7 @@ RULES:
 - Make exactly ONE change. Do not rewrite the entire file.
 - The change should be targeted and incremental.
 - Consider what has been tried before (see progress log) and try something different.
+- Apply the tactical learnings from previous runs if available.
 - Your response MUST contain exactly two sections:
   1. <summary> — A one-line description of what you changed and why
   2. <lever> — The complete new content of the lever file
@@ -79,6 +88,7 @@ ${progressLog}
 
 ${contextSections.length > 0 ? "# Context Files\n" + contextSections.join("\n\n") : ""}
 
+${learnings ? `# Learnings from Previous Runs\n${learnings}\n` : ""}
 Make exactly one targeted improvement to the lever. Consider what has already been tried and avoid repeating failed approaches.`;
 
   const response = await client.messages.create({
