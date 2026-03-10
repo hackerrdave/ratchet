@@ -3,26 +3,27 @@ import { parse } from "csv-parse/sync";
 import { mkdir } from "fs/promises";
 import { join } from "path";
 import {
-  RATCHET_DIR,
-  RATCHET_MD,
-  SCORER_SH,
-  WATERMARK_FILE,
-  PROGRESS_LOG,
-  LABELED_SET,
-  BEST_DIR,
-  SNAPSHOTS_DIR,
+  DEFAULT_NAME,
+  ratchetMdPath,
+  scorerShPath,
+  watermarkPath,
+  progressLogPath,
+  labeledSetPath,
+  bestDir,
+  snapshotsDir,
 } from "../lib/config.ts";
 
-export async function initCommand() {
+export async function initCommand(options: { name: string }) {
   const cwd = process.cwd();
+  const name = options.name;
 
-  p.intro("ratchet init");
+  p.intro(`ratchet init${name !== DEFAULT_NAME ? ` (${name})` : ""}`);
 
   // Check if already initialized
-  const ratchetMdExists = await Bun.file(join(cwd, RATCHET_MD)).exists();
+  const ratchetMdExists = await Bun.file(join(cwd, ratchetMdPath(name))).exists();
   if (ratchetMdExists) {
     const overwrite = await p.confirm({
-      message: "RATCHET.md already exists. Reinitialize?",
+      message: `${ratchetMdPath(name)} already exists. Reinitialize?`,
       initialValue: false,
     });
     if (p.isCancel(overwrite) || !overwrite) {
@@ -60,17 +61,17 @@ export async function initCommand() {
   if (p.isCancel(lever)) return;
 
   // Create ratchet directory structure
-  await mkdir(join(cwd, BEST_DIR), { recursive: true });
-  await mkdir(join(cwd, SNAPSHOTS_DIR), { recursive: true });
+  await mkdir(join(cwd, bestDir(name)), { recursive: true });
+  await mkdir(join(cwd, snapshotsDir(name)), { recursive: true });
 
   let scorerContent = "";
   let baselineScore: number | null = null;
 
   if (anchorType === "objective") {
-    await handleObjective(cwd);
-    scorerContent = await getObjectiveScorer(cwd);
+    await handleObjective(cwd, name);
+    scorerContent = await getObjectiveScorer(cwd, name);
   } else if (anchorType === "labeled") {
-    const result = await handleLabeled(cwd, lever as string);
+    const result = await handleLabeled(cwd, name, lever as string);
     scorerContent = result.scorerContent;
     baselineScore = result.baselineScore;
   } else if (anchorType === "live") {
@@ -105,23 +106,24 @@ export async function initCommand() {
     .filter(Boolean);
 
   const ratchetMd = generateRatchetMd(goal as string, lever as string, constraints, contextFiles);
-  await Bun.write(join(cwd, RATCHET_MD), ratchetMd);
+  await Bun.write(join(cwd, ratchetMdPath(name)), ratchetMd);
 
   // Write scorer.sh
   if (scorerContent) {
-    await Bun.write(join(cwd, SCORER_SH), scorerContent);
+    const scorerPath = join(cwd, scorerShPath(name));
+    await Bun.write(scorerPath, scorerContent);
     // Make executable
     const { $ } = await import("bun");
-    await $`chmod +x ${join(cwd, SCORER_SH)}`.quiet();
+    await $`chmod +x ${scorerPath}`.quiet();
   }
 
   // Initialize watermark
   if (baselineScore !== null) {
-    await Bun.write(join(cwd, WATERMARK_FILE), baselineScore.toString());
+    await Bun.write(join(cwd, watermarkPath(name)), baselineScore.toString());
   }
 
   // Initialize empty progress log
-  const logPath = join(cwd, PROGRESS_LOG);
+  const logPath = join(cwd, progressLogPath(name));
   if (!(await Bun.file(logPath).exists())) {
     await Bun.write(logPath, "");
   }
@@ -130,19 +132,20 @@ export async function initCommand() {
   try {
     const leverContent = await Bun.file(join(cwd, lever as string)).text();
     const bestFileName = (lever as string).split("/").pop() || "lever";
-    await Bun.write(join(cwd, BEST_DIR, bestFileName), leverContent);
+    await Bun.write(join(cwd, bestDir(name), bestFileName), leverContent);
   } catch {
     p.log.warn(`Could not snapshot lever at ${lever}. Make sure the file exists before running.`);
   }
 
+  const nameHint = name !== DEFAULT_NAME ? ` --name ${name}` : "";
   p.outro(
     baselineScore !== null
-      ? `Ready. Baseline score: ${baselineScore}. Run \`ratchet start\` to begin.`
-      : "Ready. Run `ratchet start` to begin."
+      ? `Ready. Baseline score: ${baselineScore}. Run \`ratchet start${nameHint}\` to begin.`
+      : `Ready. Run \`ratchet start${nameHint}\` to begin.`
   );
 }
 
-async function handleObjective(cwd: string) {
+async function handleObjective(cwd: string, name: string) {
   const scorerPath = await p.text({
     message:
       "Do you already have a scorer script? (path to shell script, or leave empty to create one)",
@@ -158,14 +161,14 @@ async function handleObjective(cwd: string) {
     }
     // Copy to scorer.sh
     const content = await Bun.file(join(cwd, scorerPath as string)).text();
-    await Bun.write(join(cwd, SCORER_SH), content);
+    await Bun.write(join(cwd, scorerShPath(name)), content);
     p.log.success(`Copied scorer from ${scorerPath}`);
   }
 }
 
-async function getObjectiveScorer(cwd: string): Promise<string> {
-  const exists = await Bun.file(join(cwd, SCORER_SH)).exists();
-  if (exists) return await Bun.file(join(cwd, SCORER_SH)).text();
+async function getObjectiveScorer(cwd: string, name: string): Promise<string> {
+  const exists = await Bun.file(join(cwd, scorerShPath(name))).exists();
+  if (exists) return await Bun.file(join(cwd, scorerShPath(name))).text();
 
   // Generate a template
   return `#!/bin/bash
@@ -184,6 +187,7 @@ echo "0.0"
 
 async function handleLabeled(
   cwd: string,
+  name: string,
   lever: string
 ): Promise<{ scorerContent: string; baselineScore: number }> {
   // Get input labels
@@ -309,22 +313,24 @@ async function handleLabeled(
   p.log.success(`Labeled ${labeledSet.length} examples in ${elapsed} minutes.`);
 
   // Save labeled set
-  await Bun.write(join(cwd, LABELED_SET), JSON.stringify(labeledSet, null, 2));
-  p.log.success(`Saved to ${LABELED_SET}`);
+  const labeledPath = labeledSetPath(name);
+  await Bun.write(join(cwd, labeledPath), JSON.stringify(labeledSet, null, 2));
+  p.log.success(`Saved to ${labeledPath}`);
 
   // Generate scorer.sh
-  const scorerContent = generateLabeledScorer(lever, LABELED_SET);
+  const scorerContent = generateLabeledScorer(lever, labeledPath);
   p.log.info("Generating scorer.sh from labeled set... done.");
 
   // Run baseline
-  await Bun.write(join(cwd, SCORER_SH), scorerContent);
+  const scorerFile = join(cwd, scorerShPath(name));
+  await Bun.write(scorerFile, scorerContent);
   const { $ } = await import("bun");
-  await $`chmod +x ${join(cwd, SCORER_SH)}`.quiet();
+  await $`chmod +x ${scorerFile}`.quiet();
 
   let baselineScore = 0;
   try {
     const { runScorer } = await import("../lib/scorer.ts");
-    baselineScore = await runScorer(join(cwd, SCORER_SH), cwd);
+    baselineScore = await runScorer(scorerFile, cwd);
   } catch {
     p.log.warn("Could not run baseline scorer. Score set to 0.");
   }
@@ -395,13 +401,13 @@ echo "\${SCORE:-0.0}"
 `;
 }
 
-function generateLabeledScorer(leverPath: string, labeledSetPath: string): string {
+function generateLabeledScorer(leverPath: string, labeledSetFile: string): string {
   return `#!/bin/bash
 # Ratchet scorer — labeled type
 # Runs the lever against the labeled set and reports accuracy.
 # This is a template — customize the evaluation logic for your use case.
 
-LABELED_SET="${labeledSetPath}"
+LABELED_SET="${labeledSetFile}"
 LEVER="${leverPath}"
 
 if [ ! -f "$LABELED_SET" ]; then

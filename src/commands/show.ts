@@ -1,10 +1,11 @@
 import { join } from "path";
-import { SNAPSHOTS_DIR } from "../lib/config.ts";
+import { snapshotsDir } from "../lib/config.ts";
 import { readdir } from "fs/promises";
 
-export async function showCommand(iteration: string) {
+export async function showCommand(iteration: string, options: { name: string }) {
   const cwd = process.cwd();
-  const snapshotDir = join(cwd, SNAPSHOTS_DIR, iteration);
+  const name = options.name;
+  const snapshotDir = join(cwd, snapshotsDir(name), iteration);
 
   let files: string[];
   try {

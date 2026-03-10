@@ -1,17 +1,13 @@
 import { join } from "path";
-import { SNAPSHOTS_DIR } from "../lib/config.ts";
+import { snapshotsDir, DEFAULT_NAME } from "../lib/config.ts";
 import { $ } from "bun";
 
-export async function diffCommand(from: string, to: string) {
+export async function diffCommand(from: string, to: string, options: { name: string }) {
   const cwd = process.cwd();
-  const fromDir = join(cwd, SNAPSHOTS_DIR, from);
-  const toDir = join(cwd, SNAPSHOTS_DIR, to);
+  const name = options.name;
+  const fromDir = join(cwd, snapshotsDir(name), from);
+  const toDir = join(cwd, snapshotsDir(name), to);
 
-  // Check dirs exist
-  const fromExists = await Bun.file(fromDir).exists().catch(() => false);
-  const toExists = await Bun.file(toDir).exists().catch(() => false);
-
-  // Use ls to check directories
   try {
     await $`ls ${fromDir}`.quiet();
   } catch {

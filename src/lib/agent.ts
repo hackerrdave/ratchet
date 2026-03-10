@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { parseRatchetMd, RATCHET_MD, PROGRESS_LOG } from "./config.ts";
+import { parseRatchetMd, ratchetMdPath, progressLogPath, DEFAULT_NAME } from "./config.ts";
 import { join } from "path";
 
 const MAX_TOKENS = 4096;
@@ -9,7 +9,7 @@ interface AgentResult {
   summary: string;
 }
 
-export async function runAgent(cwd: string, model: string): Promise<AgentResult> {
+export async function runAgent(cwd: string, model: string, name: string = DEFAULT_NAME): Promise<AgentResult> {
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY environment variable is required");
@@ -18,7 +18,7 @@ export async function runAgent(cwd: string, model: string): Promise<AgentResult>
   const client = new Anthropic({ apiKey });
 
   // Read RATCHET.md
-  const ratchetMd = await Bun.file(join(cwd, RATCHET_MD)).text();
+  const ratchetMd = await Bun.file(join(cwd, ratchetMdPath(name))).text();
   const config = parseRatchetMd(ratchetMd);
 
   // Read current lever state
@@ -28,7 +28,7 @@ export async function runAgent(cwd: string, model: string): Promise<AgentResult>
   // Read progress log
   let progressLog = "";
   try {
-    progressLog = await Bun.file(join(cwd, PROGRESS_LOG)).text();
+    progressLog = await Bun.file(join(cwd, progressLogPath(name))).text();
   } catch {
     progressLog = "(no iterations yet)";
   }

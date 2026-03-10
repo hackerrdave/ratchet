@@ -1,15 +1,54 @@
 import { z } from "zod";
 import { join } from "path";
 
+export const DEFAULT_NAME = "default";
 export const RATCHET_DIR = "ratchet";
-export const RATCHET_MD = "RATCHET.md";
-export const SCORER_SH = "scorer.sh";
-export const WATERMARK_FILE = join(RATCHET_DIR, "watermark.txt");
-export const PROGRESS_LOG = join(RATCHET_DIR, "progress.log");
-export const LABELED_SET = join(RATCHET_DIR, "labeled_set.json");
-export const BEST_DIR = join(RATCHET_DIR, "best");
-export const PAUSE_FILE = join(RATCHET_DIR, ".paused");
-export const SNAPSHOTS_DIR = join(RATCHET_DIR, "snapshots");
+
+export function ratchetDir(name: string = DEFAULT_NAME): string {
+  return join(RATCHET_DIR, name);
+}
+
+export function ratchetMdPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "RATCHET.md");
+}
+
+export function scorerShPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "scorer.sh");
+}
+
+export function watermarkPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "watermark.txt");
+}
+
+export function progressLogPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "progress.log");
+}
+
+export function labeledSetPath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "labeled_set.json");
+}
+
+export function bestDir(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "best");
+}
+
+export function pauseFilePath(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), ".paused");
+}
+
+export function snapshotsDir(name: string = DEFAULT_NAME): string {
+  return join(ratchetDir(name), "snapshots");
+}
+
+// Legacy constants for backwards compat (map to default name)
+export const RATCHET_MD = ratchetMdPath();
+export const SCORER_SH = scorerShPath();
+export const WATERMARK_FILE = watermarkPath();
+export const PROGRESS_LOG = progressLogPath();
+export const LABELED_SET = labeledSetPath();
+export const BEST_DIR = bestDir();
+export const PAUSE_FILE = pauseFilePath();
+export const SNAPSHOTS_DIR = snapshotsDir();
 
 export const RatchetMdSchema = z.object({
   goal: z.string().min(1),

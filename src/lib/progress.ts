@@ -1,4 +1,4 @@
-import { PROGRESS_LOG, SNAPSHOTS_DIR } from "./config.ts";
+import { progressLogPath, snapshotsDir, DEFAULT_NAME } from "./config.ts";
 import { join } from "path";
 import { mkdir, cp } from "fs/promises";
 
@@ -12,8 +12,8 @@ export interface ProgressEntry {
   summary: string;
 }
 
-export async function readProgressLog(cwd: string): Promise<ProgressEntry[]> {
-  const path = join(cwd, PROGRESS_LOG);
+export async function readProgressLog(cwd: string, name: string = DEFAULT_NAME): Promise<ProgressEntry[]> {
+  const path = join(cwd, progressLogPath(name));
   try {
     const content = await Bun.file(path).text();
     return content
@@ -26,8 +26,8 @@ export async function readProgressLog(cwd: string): Promise<ProgressEntry[]> {
   }
 }
 
-export async function appendProgress(cwd: string, entry: ProgressEntry): Promise<void> {
-  const path = join(cwd, PROGRESS_LOG);
+export async function appendProgress(cwd: string, entry: ProgressEntry, name: string = DEFAULT_NAME): Promise<void> {
+  const path = join(cwd, progressLogPath(name));
   const file = Bun.file(path);
   const existing = (await file.exists()) ? await file.text() : "";
   await Bun.write(path, existing + JSON.stringify(entry) + "\n");
@@ -36,9 +36,10 @@ export async function appendProgress(cwd: string, entry: ProgressEntry): Promise
 export async function snapshotLever(
   cwd: string,
   leverPath: string,
-  iteration: number
+  iteration: number,
+  name: string = DEFAULT_NAME
 ): Promise<void> {
-  const snapshotDir = join(cwd, SNAPSHOTS_DIR, String(iteration));
+  const snapshotDir = join(cwd, snapshotsDir(name), String(iteration));
   await mkdir(snapshotDir, { recursive: true });
 
   const sourcePath = join(cwd, leverPath);

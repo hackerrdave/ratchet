@@ -2,10 +2,11 @@ import * as p from "@clack/prompts";
 import { join } from "path";
 import { cp, mkdir } from "fs/promises";
 import {
-  RATCHET_MD,
-  SCORER_SH,
-  BEST_DIR,
-  PAUSE_FILE,
+  DEFAULT_NAME,
+  ratchetMdPath,
+  scorerShPath,
+  bestDir,
+  pauseFilePath,
   parseRatchetMd,
 } from "../lib/config.ts";
 import { runScorer } from "../lib/scorer.ts";
@@ -18,21 +19,23 @@ interface StartOptions {
   minDelta: string;
   schedule?: string;
   model: string;
+  name: string;
 }
 
 export async function startCommand(options: StartOptions) {
   const cwd = process.cwd();
+  const name = options.name;
 
   // Validate prerequisites
-  const ratchetMdPath = join(cwd, RATCHET_MD);
-  if (!(await Bun.file(ratchetMdPath).exists())) {
-    console.error("No RATCHET.md found. Run `ratchet init` first.");
+  const ratchetMd = join(cwd, ratchetMdPath(name));
+  if (!(await Bun.file(ratchetMd).exists())) {
+    console.error(`No ${ratchetMdPath(name)} found. Run \`ratchet init --name ${name}\` first.`);
     process.exit(1);
   }
 
-  const scorerPath = join(cwd, SCORER_SH);
-  if (!(await Bun.file(scorerPath).exists())) {
-    console.error("No scorer.sh found. Run `ratchet init` first.");
+  const scorer = join(cwd, scorerShPath(name));
+  if (!(await Bun.file(scorer).exists())) {
+    console.error(`No ${scorerShPath(name)} found. Run \`ratchet init --name ${name}\` first.`);
     process.exit(1);
   }
 
@@ -51,16 +54,16 @@ export async function startCommand(options: StartOptions) {
     return;
   }
 
-  const ratchetMd = await Bun.file(ratchetMdPath).text();
-  const config = parseRatchetMd(ratchetMd);
+  const ratchetMdContent = await Bun.file(ratchetMd).text();
+  const config = parseRatchetMd(ratchetMdContent);
 
   // Get or set initial watermark
-  let watermark = await readWatermark(cwd);
+  let watermark = await readWatermark(cwd, name);
   if (watermark === -Infinity) {
     p.intro("No watermark found. Running baseline scorer...");
     try {
-      watermark = await runScorer(scorerPath, cwd);
-      await writeWatermark(cwd, watermark);
+      watermark = await runScorer(scorer, cwd);
+      await writeWatermark(cwd, watermark, name);
       console.log(`Baseline score: ${watermark}`);
     } catch (err) {
       console.error(`Baseline scorer failed: ${err}`);
@@ -68,7 +71,8 @@ export async function startCommand(options: StartOptions) {
     }
   }
 
-  console.log(`\nStarting ratchet loop`);
+  const nameLabel = name !== DEFAULT_NAME ? ` (${name})` : "";
+  console.log(`\nStarting ratchet loop${nameLabel}`);
   console.log(`  Lever: ${config.lever}`);
   console.log(`  Model: ${model}`);
   console.log(`  Iterations: ${iterations}`);
@@ -81,8 +85,8 @@ export async function startCommand(options: StartOptions) {
 
   for (let i = 1; i <= iterations; i++) {
     // Check for pause
-    if (await Bun.file(join(cwd, PAUSE_FILE)).exists()) {
-      console.log(`\nPaused at iteration ${i}. Run \`ratchet resume\` to continue.`);
+    if (await Bun.file(join(cwd, pauseFilePath(name))).exists()) {
+      console.log(`\nPaused at iteration ${i}. Run \`ratchet resume --name ${name}\` to continue.`);
       return;
     }
 
@@ -101,7 +105,7 @@ export async function startCommand(options: StartOptions) {
 
     let agentResult;
     try {
-      agentResult = await runAgent(cwd, model);
+      agentResult = await runAgent(cwd, model, name);
     } catch (err) {
       console.log(`agent error: ${err}`);
       const entry: ProgressEntry = {
@@ -113,7 +117,7 @@ export async function startCommand(options: StartOptions) {
         status: "discarded",
         summary: `Agent error: ${err}`,
       };
-      await appendProgress(cwd, entry);
+      await appendProgress(cwd, entry, name);
       discarded++;
       continue;
     }
@@ -125,7 +129,7 @@ export async function startCommand(options: StartOptions) {
     // Score
     let score: number;
     try {
-      score = await runScorer(scorerPath, cwd);
+      score = await runScorer(scorer, cwd);
     } catch (err) {
       console.log(`scorer error: ${err}`);
       // Rollback
@@ -139,7 +143,7 @@ export async function startCommand(options: StartOptions) {
         status: "discarded",
         summary: `Scorer error: ${err}`,
       };
-      await appendProgress(cwd, entry);
+      await appendProgress(cwd, entry, name);
       discarded++;
       continue;
     }
@@ -149,14 +153,14 @@ export async function startCommand(options: StartOptions) {
     if (delta >= minDelta) {
       // Accept
       watermark = score;
-      await writeWatermark(cwd, watermark);
+      await writeWatermark(cwd, watermark, name);
 
       // Snapshot
-      await snapshotLever(cwd, config.lever, i);
+      await snapshotLever(cwd, config.lever, i, name);
 
       // Update best
       const bestFileName = config.lever.split("/").pop() || "lever";
-      await Bun.write(join(cwd, BEST_DIR, bestFileName), agentResult.newContent);
+      await Bun.write(join(cwd, bestDir(name), bestFileName), agentResult.newContent);
 
       const entry: ProgressEntry = {
         iteration: i,
@@ -167,7 +171,7 @@ export async function startCommand(options: StartOptions) {
         status: "kept",
         summary: agentResult.summary,
       };
-      await appendProgress(cwd, entry);
+      await appendProgress(cwd, entry, name);
 
       console.log(`✓ kept  score=${score.toFixed(4)} (+${delta.toFixed(4)}) — ${agentResult.summary}`);
       kept++;
@@ -184,7 +188,7 @@ export async function startCommand(options: StartOptions) {
         status: "discarded",
         summary: agentResult.summary,
       };
-      await appendProgress(cwd, entry);
+      await appendProgress(cwd, entry, name);
 
       console.log(`✗ disc  score=${score.toFixed(4)} (${delta >= 0 ? "+" : ""}${delta.toFixed(4)}) — ${agentResult.summary}`);
       discarded++;

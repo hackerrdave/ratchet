@@ -81,16 +81,32 @@ Run `ratchet init` in your project root to set everything up interactively. It w
 
 5. **Context files** — additional files Claude should read for background
 
-This generates:
+### Named Ratchets
 
-| File | Purpose |
+You can run multiple independent ratchets in the same project using `--name`:
+
+```bash
+ratchet init --name classifier
+ratchet init --name system-prompt
+ratchet init --name config
+
+ratchet start --name classifier
+ratchet watch --name system-prompt
+ratchet log --name config
+```
+
+Each named ratchet gets its own spec, scorer, watermark, and history. Omitting `--name` uses `default`.
+
+### Generated Files
+
+| Path | Purpose |
 |---|---|
-| `RATCHET.md` | Optimization spec — goal, lever, constraints, context |
-| `scorer.sh` | Shell script that outputs a single float (higher = better) |
-| `ratchet/watermark.txt` | Current high watermark score |
-| `ratchet/progress.log` | JSONL log of every iteration |
-| `ratchet/best/` | Latest best version of the lever |
-| `ratchet/snapshots/` | Snapshot of the lever at each kept iteration |
+| `ratchet/<name>/RATCHET.md` | Optimization spec — goal, lever, constraints, context |
+| `ratchet/<name>/scorer.sh` | Shell script that outputs a single float (higher = better) |
+| `ratchet/<name>/watermark.txt` | Current high watermark score |
+| `ratchet/<name>/progress.log` | JSONL log of every iteration |
+| `ratchet/<name>/best/` | Latest best version of the lever |
+| `ratchet/<name>/snapshots/` | Snapshot of the lever at each kept iteration |
 
 ### `RATCHET.md`
 
@@ -127,18 +143,24 @@ echo "scale=4; $TOTAL / ($TOTAL + $FAILED)" | bc
 
 ## Usage
 
+All commands accept `--name <name>` to target a specific ratchet. Defaults to `default`.
+
 ### Start an Optimization Run
 
 ```bash
 # Run 20 iterations with defaults
 ratchet start
 
+# Target a specific ratchet
+ratchet start --name classifier
+
 # Customize the run
-ratchet start --iterations 50 --min-delta 0.01 --model claude-haiku-4-20250414
+ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-haiku-4-20250414
 ```
 
 | Option | Default | Description |
 |---|---|---|
+| `--name <name>` | `default` | Which ratchet to run |
 | `-n, --iterations <n>` | `20` | Number of iterations to run |
 | `--min-delta <delta>` | `0.001` | Minimum score improvement to accept a change |
 | `--model <model>` | `claude-haiku-4-20250414` | Claude model to use |
@@ -147,7 +169,7 @@ ratchet start --iterations 50 --min-delta 0.01 --model claude-haiku-4-20250414
 Output looks like:
 
 ```
-Starting ratchet loop
+Starting ratchet loop (classifier)
   Lever: prompts/classifier.md
   Model: claude-haiku-4-20250414
   Iterations: 20
@@ -165,7 +187,7 @@ Done. 8 kept, 12 discarded. Final watermark: 0.8420
 ### Watch Live Progress
 
 ```bash
-ratchet watch
+ratchet watch --name classifier
 ```
 
 Displays a live staircase chart in the terminal showing score progression, watermark level, and accept/discard history. Refreshes every 2 seconds.
@@ -173,7 +195,7 @@ Displays a live staircase chart in the terminal showing score progression, water
 ### View Iteration History
 
 ```bash
-ratchet log
+ratchet log --name classifier
 ```
 
 ```
@@ -190,7 +212,7 @@ ratchet log
 
 ```bash
 # Diff the lever between two kept iterations
-ratchet diff 1 3
+ratchet diff 1 3 --name classifier
 ```
 
 Shows a unified diff of the lever file between any two snapshots.
@@ -198,24 +220,24 @@ Shows a unified diff of the lever file between any two snapshots.
 ### Inspect a Specific Iteration
 
 ```bash
-ratchet show 3
+ratchet show 3 --name classifier
 ```
 
 ### Restore a Previous State
 
 ```bash
 # Roll the lever back to iteration 3's state
-ratchet checkout 3
+ratchet checkout 3 --name classifier
 ```
 
 ### Pause and Resume
 
 ```bash
 # Pause a running optimization (checked between iterations)
-ratchet pause
+ratchet pause --name classifier
 
 # Resume where you left off
-ratchet resume
+ratchet resume --name classifier
 ```
 
 ## Example: Optimizing a Classifier Prompt
@@ -234,38 +256,40 @@ chmod +x scorer.sh
 
 # 3. Initialize ratchet
 export ANTHROPIC_API_KEY="sk-ant-..."
-ratchet init
+ratchet init --name classifier
 # → Select "Objective" scorer type
 # → Goal: "Improve classification accuracy"
 # → Lever: prompts/classifier.md
 
 # 4. Run the optimization loop
-ratchet start --iterations 30
+ratchet start --name classifier --iterations 30
 
 # 5. Watch it climb
-ratchet watch
+ratchet watch --name classifier
 ```
 
 ## Project Structure
 
 ```
 your-project/
-├── RATCHET.md              # Optimization spec
-├── scorer.sh               # Scoring script
 ├── prompts/
-│   └── classifier.md       # The lever (file being optimized)
+│   └── classifier.md           # The lever (file being optimized)
 └── ratchet/
-    ├── watermark.txt        # Current high watermark
-    ├── progress.log         # JSONL iteration history
-    ├── labeled_set.json     # Labeled examples (if using labeled scorer)
-    ├── best/
-    │   └── classifier.md    # Best lever state so far
-    └── snapshots/
-        ├── 1/
-        │   └── classifier.md
-        ├── 3/
-        │   └── classifier.md
-        └── ...              # One snapshot per kept iteration
+    ├── classifier/
+    │   ├── RATCHET.md          # Optimization spec
+    │   ├── scorer.sh           # Scoring script
+    │   ├── watermark.txt       # Current high watermark
+    │   ├── progress.log        # JSONL iteration history
+    │   ├── best/
+    │   │   └── classifier.md   # Best lever state so far
+    │   └── snapshots/
+    │       ├── 1/
+    │       ├── 3/
+    │       └── ...             # One per kept iteration
+    └── system-prompt/
+        ├── RATCHET.md
+        ├── scorer.sh
+        └── ...                 # Another independent ratchet
 ```
 
 ## License

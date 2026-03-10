@@ -1,21 +1,23 @@
 import { readProgressLog, type ProgressEntry } from "../lib/progress.ts";
 import { readWatermark } from "../lib/watermark.ts";
-import { PROGRESS_LOG } from "../lib/config.ts";
+import { progressLogPath, DEFAULT_NAME } from "../lib/config.ts";
 import { join } from "path";
 
 const CHART_WIDTH = 60;
 const CHART_HEIGHT = 20;
 
-export async function watchCommand() {
+export async function watchCommand(options: { name: string }) {
   const cwd = process.cwd();
+  const name = options.name;
 
-  console.log("ratchet watch — live staircase chart (Ctrl+C to exit)\n");
+  const nameLabel = name !== DEFAULT_NAME ? ` (${name})` : "";
+  console.log(`ratchet watch${nameLabel} — live staircase chart (Ctrl+C to exit)\n`);
 
   let lastCount = 0;
 
   const render = async () => {
-    const entries = await readProgressLog(cwd);
-    const watermark = await readWatermark(cwd);
+    const entries = await readProgressLog(cwd, name);
+    const watermark = await readWatermark(cwd, name);
 
     if (entries.length === lastCount && entries.length > 0) return;
     lastCount = entries.length;
@@ -27,7 +29,7 @@ export async function watchCommand() {
 
     // Clear screen
     process.stdout.write("\x1b[2J\x1b[H");
-    console.log("ratchet watch — live staircase chart (Ctrl+C to exit)\n");
+    console.log(`ratchet watch${nameLabel} — live staircase chart (Ctrl+C to exit)\n`);
 
     renderStaircase(entries, watermark);
     renderSummary(entries, watermark);
@@ -37,7 +39,7 @@ export async function watchCommand() {
   await render();
 
   // Watch for changes to progress.log
-  const logPath = join(cwd, PROGRESS_LOG);
+  const logPath = join(cwd, progressLogPath(name));
 
   const interval = setInterval(async () => {
     await render();

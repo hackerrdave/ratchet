@@ -1,10 +1,11 @@
 import { join } from "path";
 import { readdir } from "fs/promises";
-import { SNAPSHOTS_DIR, RATCHET_MD, parseRatchetMd } from "../lib/config.ts";
+import { snapshotsDir, ratchetMdPath, parseRatchetMd } from "../lib/config.ts";
 
-export async function checkoutCommand(iteration: string) {
+export async function checkoutCommand(iteration: string, options: { name: string }) {
   const cwd = process.cwd();
-  const snapshotDir = join(cwd, SNAPSHOTS_DIR, iteration);
+  const name = options.name;
+  const snapshotDir = join(cwd, snapshotsDir(name), iteration);
 
   let files: string[];
   try {
@@ -15,7 +16,7 @@ export async function checkoutCommand(iteration: string) {
   }
 
   // Read RATCHET.md to get lever path
-  const ratchetMd = await Bun.file(join(cwd, RATCHET_MD)).text();
+  const ratchetMd = await Bun.file(join(cwd, ratchetMdPath(name))).text();
   const config = parseRatchetMd(ratchetMd);
 
   // Restore files

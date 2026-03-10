@@ -1,13 +1,18 @@
 import { readProgressLog } from "../lib/progress.ts";
+import { DEFAULT_NAME } from "../lib/config.ts";
 
-export async function logCommand() {
+export async function logCommand(options: { name: string }) {
   const cwd = process.cwd();
-  const entries = await readProgressLog(cwd);
+  const name = options.name;
+  const entries = await readProgressLog(cwd, name);
 
   if (entries.length === 0) {
     console.log("No iterations yet.");
     return;
   }
+
+  const nameLabel = name !== DEFAULT_NAME ? ` (${name})` : "";
+  console.log(`Ratchet log${nameLabel}\n`);
 
   console.log(`${"#".padStart(4)}  ${"Status".padEnd(10)}  ${"Score".padStart(8)}  ${"Delta".padStart(8)}  ${"Timestamp".padEnd(24)}  Summary`);
   console.log("─".repeat(100));
