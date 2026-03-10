@@ -155,7 +155,7 @@ ratchet start
 ratchet start --name classifier
 
 # Customize the run
-ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-haiku-4-20250414
+ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-haiku-4-5-20251001
 ```
 
 | Option | Default | Description |
@@ -163,7 +163,7 @@ ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-
 | `--name <name>` | `default` | Which ratchet to run |
 | `-n, --iterations <n>` | `20` | Number of iterations to run |
 | `--min-delta <delta>` | `0.001` | Minimum score improvement to accept a change |
-| `--model <model>` | `claude-haiku-4-20250414` | Claude model to use |
+| `--model <model>` | `claude-haiku-4-5-20251001` | Claude model to use |
 | `--schedule <cron>` | — | Cron schedule for recurring runs (coming soon) |
 
 Output looks like:
@@ -171,7 +171,7 @@ Output looks like:
 ```
 Starting ratchet loop (classifier)
   Lever: prompts/classifier.md
-  Model: claude-haiku-4-20250414
+  Model: claude-haiku-4-5-20251001
   Iterations: 20
   Min delta: 0.001
   Current watermark: 0.72

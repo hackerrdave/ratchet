@@ -369,7 +369,7 @@ async function handleLlmJudge(cwd: string, lever: string, goal: string): Promise
 
   const judgeModel = await p.text({
     message: "Which model should judge? (model ID)",
-    initialValue: "claude-haiku-4-20250414",
+    initialValue: "claude-haiku-4-5-20251001",
   });
   if (p.isCancel(judgeModel)) process.exit(0);
 

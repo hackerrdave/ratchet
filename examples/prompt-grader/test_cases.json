@@ -1,0 +1,122 @@
+[
+  {
+    "review": "Absolutely love this product! Best purchase I've made all year.",
+    "expected": "positive"
+  },
+  {
+    "review": "Terrible quality. Broke after two days. Want my money back.",
+    "expected": "negative"
+  },
+  {
+    "review": "It's okay I guess. Does what it says but nothing special.",
+    "expected": "neutral"
+  },
+  {
+    "review": "The packaging was nice but the product itself was disappointing.",
+    "expected": "negative"
+  },
+  {
+    "review": "Five stars! My whole family uses it now.",
+    "expected": "positive"
+  },
+  {
+    "review": "Works as described. Shipping was fast.",
+    "expected": "positive"
+  },
+  {
+    "review": "DO NOT BUY. Complete scam. Reported to BBB.",
+    "expected": "negative"
+  },
+  {
+    "review": "Changed my life. I can't imagine going back to the old way.",
+    "expected": "positive"
+  },
+  {
+    "review": "Meh. It's fine for the price point I suppose.",
+    "expected": "neutral"
+  },
+  {
+    "review": "The instructions were confusing but once I figured it out, it works great.",
+    "expected": "positive"
+  },
+  {
+    "review": "Arrived damaged. Customer service was unhelpful.",
+    "expected": "negative"
+  },
+  {
+    "review": "Average product. Neither impressed nor disappointed.",
+    "expected": "neutral"
+  },
+  {
+    "review": "Not bad for the price but I've seen better. Would consider alternatives next time.",
+    "expected": "neutral"
+  },
+  {
+    "review": "The product works but the company's return policy is awful. Mixed feelings.",
+    "expected": "neutral"
+  },
+  {
+    "review": "I wanted to love this but it just didn't live up to the hype. Still decent though.",
+    "expected": "neutral"
+  },
+  {
+    "review": "Great concept, mediocre execution. Could be so much better.",
+    "expected": "negative"
+  },
+  {
+    "review": "My friend recommended it and I can see why, though it's not perfect.",
+    "expected": "positive"
+  },
+  {
+    "review": "Overpriced for what you get. Similar products cost half as much.",
+    "expected": "negative"
+  },
+  {
+    "review": "Solid build quality but the software is buggy. Hardware: 5 stars. Software: 2 stars.",
+    "expected": "neutral"
+  },
+  {
+    "review": "It's growing on me. Hated it at first but now I use it daily.",
+    "expected": "positive"
+  },
+  {
+    "review": "Bought this ironically and now I unironically love it lol",
+    "expected": "positive"
+  },
+  {
+    "review": "Sure, it 'works' if your definition of working includes crashing every hour.",
+    "expected": "negative"
+  },
+  {
+    "review": "10/10 would not recommend. Actually wait, 10/10 WOULD recommend. I'm confused by my own feelings.",
+    "expected": "positive"
+  },
+  {
+    "review": "The old version was better. This update ruined everything that made it good.",
+    "expected": "negative"
+  },
+  {
+    "review": "I don't love it, I don't hate it. It exists. I use it. That's about it.",
+    "expected": "neutral"
+  },
+  {
+    "review": "Perfect for what I need! Although I wish it came in more colors.",
+    "expected": "positive"
+  },
+  {
+    "review": "Would give zero stars if I could. The only good thing is the box it came in.",
+    "expected": "negative"
+  },
+  {
+    "review": "It's exactly what the description says. No surprises, good or bad.",
+    "expected": "neutral"
+  },
+  {
+    "review": "Functional but ugly. Gets the job done if you don't care about aesthetics.",
+    "expected": "neutral"
+  },
+  {
+    "review": "Three months in and still going strong. Pleasantly surprised by the durability.",
+    "expected": "positive"
+  }
+]

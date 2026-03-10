@@ -29,7 +29,7 @@ program
   .option("-n, --iterations <n>", "Number of iterations", "20")
   .option("--min-delta <delta>", "Minimum improvement to accept", "0.001")
   .option("--schedule <cron>", "Cron schedule for recurring runs")
-  .option("--model <model>", "Claude model to use", "claude-haiku-4-20250414")
+  .option("--model <model>", "Claude model to use", "claude-haiku-4-5-20251001")
   .action(startCommand);
 
 program
