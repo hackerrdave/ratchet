@@ -134,14 +134,14 @@ echo "scale=4; $TOTAL / ($TOTAL + $FAILED)" | bc
 ratchet start
 
 # Customize the run
-ratchet start --iterations 50 --min-delta 0.01 --model claude-sonnet-4-20250514
+ratchet start --iterations 50 --min-delta 0.01 --model claude-haiku-4-20250414
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `-n, --iterations <n>` | `20` | Number of iterations to run |
 | `--min-delta <delta>` | `0.001` | Minimum score improvement to accept a change |
-| `--model <model>` | `claude-sonnet-4-20250514` | Claude model to use |
+| `--model <model>` | `claude-haiku-4-20250414` | Claude model to use |
 | `--schedule <cron>` | — | Cron schedule for recurring runs (coming soon) |
 
 Output looks like:
@@ -149,7 +149,7 @@ Output looks like:
 ```
 Starting ratchet loop
   Lever: prompts/classifier.md
-  Model: claude-sonnet-4-20250514
+  Model: claude-haiku-4-20250414
   Iterations: 20
   Min delta: 0.001
   Current watermark: 0.72
