@@ -118,6 +118,129 @@ describe("compression acceptance logic", () => {
   });
 });
 
+describe("compression max-stale early stopping", () => {
+  function shouldAcceptCompress(opts: {
+    score: number;
+    bestScore: number;
+    qualityBar: number;
+    qualityMargin: number;
+    newTokens: number;
+    currentTokens: number;
+    minTokenReduction: number;
+  }): boolean {
+    const qualityOk = opts.score >= opts.qualityBar - opts.qualityMargin;
+    const qualityDropped = opts.score < opts.bestScore;
+    const tokensReduced = opts.newTokens < opts.currentTokens;
+    const tokenReduction =
+      (opts.currentTokens - opts.newTokens) / opts.currentTokens;
+    const substantialReduction = tokenReduction >= opts.minTokenReduction;
+    return qualityOk && tokensReduced && (!qualityDropped || substantialReduction);
+  }
+
+  function simulateCompressRun(opts: {
+    proposals: { score: number; newTokens: number }[];
+    bestScore: number;
+    currentTokens: number;
+    qualityBar: number;
+    qualityMargin: number;
+    minTokenReduction: number;
+    maxStale: number;
+  }): { kept: number; discarded: number; stoppedEarly: boolean; iterationsRun: number } {
+    let { bestScore, currentTokens } = opts;
+    let kept = 0;
+    let discarded = 0;
+    let consecutiveDiscards = 0;
+    let stoppedEarly = false;
+    let iterationsRun = 0;
+
+    for (const proposal of opts.proposals) {
+      iterationsRun++;
+      const accept = shouldAcceptCompress({
+        score: proposal.score,
+        bestScore,
+        qualityBar: opts.qualityBar,
+        qualityMargin: opts.qualityMargin,
+        newTokens: proposal.newTokens,
+        currentTokens,
+        minTokenReduction: opts.minTokenReduction,
+      });
+
+      if (accept) {
+        bestScore = proposal.score;
+        currentTokens = proposal.newTokens;
+        kept++;
+        consecutiveDiscards = 0;
+      } else {
+        discarded++;
+        consecutiveDiscards++;
+      }
+
+      if (consecutiveDiscards >= opts.maxStale) {
+        stoppedEarly = true;
+        break;
+      }
+    }
+
+    return { kept, discarded, stoppedEarly, iterationsRun };
+  }
+
+  const base = {
+    bestScore: 0.92,
+    currentTokens: 1000,
+    qualityBar: 0.90,
+    qualityMargin: 0.03,
+    minTokenReduction: 0.10,
+    maxStale: 3,
+  };
+
+  test("stops after N consecutive rejected compressions", () => {
+    const result = simulateCompressRun({
+      ...base,
+      proposals: [
+        { score: 0.92, newTokens: 1000 }, // no reduction
+        { score: 0.92, newTokens: 1000 }, // no reduction
+        { score: 0.92, newTokens: 1000 }, // no reduction
+        { score: 0.92, newTokens: 800 },  // would be accepted
+      ],
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.iterationsRun).toBe(3);
+    expect(result.discarded).toBe(3);
+  });
+
+  test("resets counter when a compression is accepted", () => {
+    const result = simulateCompressRun({
+      ...base,
+      proposals: [
+        { score: 0.92, newTokens: 1000 }, // reject
+        { score: 0.92, newTokens: 1000 }, // reject
+        { score: 0.92, newTokens: 900 },  // accept (quality held, tokens down)
+        { score: 0.92, newTokens: 900 },  // reject (no further reduction)
+        { score: 0.92, newTokens: 900 },  // reject
+        { score: 0.92, newTokens: 900 },  // reject → triggers stop
+      ],
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.iterationsRun).toBe(6);
+    expect(result.kept).toBe(1);
+    expect(result.discarded).toBe(5);
+  });
+
+  test("completes all iterations when stale limit not hit", () => {
+    const result = simulateCompressRun({
+      ...base,
+      proposals: [
+        { score: 0.92, newTokens: 900 },  // accept
+        { score: 0.92, newTokens: 1000 }, // reject (tokens went up relative to new current)
+        { score: 0.92, newTokens: 800 },  // accept
+        { score: 0.92, newTokens: 700 },  // accept
+      ],
+    });
+    expect(result.stoppedEarly).toBe(false);
+    expect(result.iterationsRun).toBe(4);
+  });
+});
+
 describe("progress entry efficiency fields", () => {
   test("ProgressEntry supports efficiency phase fields", () => {
     // Type check — ensure the extended fields are accepted

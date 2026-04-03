@@ -24,6 +24,7 @@ interface StartOptions {
   judgeModel?: string;
   fresh?: boolean;
   maxSpend?: string;
+  maxStale?: string;
 }
 
 export async function startCommand(options: StartOptions) {
@@ -65,6 +66,7 @@ export async function startCommand(options: StartOptions) {
   const model = options.model;
   const judgeModel = options.judgeModel;
   const maxSpend = options.maxSpend ? parseFloat(options.maxSpend) : undefined;
+  const maxStale = parseInt(options.maxStale || "5", 10);
 
   let startIteration = 1;
   let runId: string;
@@ -109,6 +111,7 @@ export async function startCommand(options: StartOptions) {
     ...(judgeModel ? [["Judge", judgeModel] as [string, string]] : []),
     ["Iterations", `${iterations}`],
     ["Min delta", `${minDelta}`],
+    ["Max stale", `${maxStale}`],
     ["Watermark", `${c.bold}${watermark.toFixed(4)}${c.reset}`],
   ];
   if (maxSpend !== undefined) items.push(["Max spend", formatCost(maxSpend)]);
@@ -116,6 +119,7 @@ export async function startCommand(options: StartOptions) {
 
   let kept = 0;
   let discarded = 0;
+  let consecutiveDiscards = 0;
 
   for (let i = startIteration; i <= iterations; i++) {
     const iterTimer = timer();
@@ -165,6 +169,11 @@ export async function startCommand(options: StartOptions) {
       };
       await appendProgress(cwd, entry);
       discarded++;
+      consecutiveDiscards++;
+      if (consecutiveDiscards >= maxStale) {
+        console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+        break;
+      }
       continue;
     }
 
@@ -192,6 +201,11 @@ export async function startCommand(options: StartOptions) {
       };
       await appendProgress(cwd, entry);
       discarded++;
+      consecutiveDiscards++;
+      if (consecutiveDiscards >= maxStale) {
+        console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+        break;
+      }
       continue;
     }
 
@@ -227,6 +241,7 @@ export async function startCommand(options: StartOptions) {
         summary: agentResult.summary, elapsed: iterTimer.format(),
       });
       kept++;
+      consecutiveDiscards = 0;
     } else {
       await Bun.write(promptPath, originalContent);
 
@@ -246,6 +261,12 @@ export async function startCommand(options: StartOptions) {
         summary: agentResult.summary, elapsed: iterTimer.format(),
       });
       discarded++;
+      consecutiveDiscards++;
+    }
+
+    if (consecutiveDiscards >= maxStale) {
+      console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+      break;
     }
   }
 

@@ -105,3 +105,115 @@ describe("accept/reject/rollback logic", () => {
     expect(entries).toHaveLength(3);
   });
 });
+
+describe("max-stale early stopping", () => {
+  // Replicate the consecutive-discard tracking logic from start.ts
+  function simulateRun(opts: {
+    scores: number[];
+    watermark: number;
+    minDelta: number;
+    maxStale: number;
+  }): { kept: number; discarded: number; stoppedEarly: boolean; iterationsRun: number } {
+    let { watermark } = opts;
+    let kept = 0;
+    let discarded = 0;
+    let consecutiveDiscards = 0;
+    let stoppedEarly = false;
+    let iterationsRun = 0;
+
+    for (const score of opts.scores) {
+      iterationsRun++;
+      const delta = score - watermark;
+
+      if (delta >= opts.minDelta) {
+        watermark = score;
+        kept++;
+        consecutiveDiscards = 0;
+      } else {
+        discarded++;
+        consecutiveDiscards++;
+      }
+
+      if (consecutiveDiscards >= opts.maxStale) {
+        stoppedEarly = true;
+        break;
+      }
+    }
+
+    return { kept, discarded, stoppedEarly, iterationsRun };
+  }
+
+  test("stops after N consecutive discards", () => {
+    const result = simulateRun({
+      scores: [0.70, 0.70, 0.70, 0.70, 0.70, 0.70, 0.70],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 5,
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.iterationsRun).toBe(5);
+    expect(result.discarded).toBe(5);
+  });
+
+  test("does not stop when improvements are interspersed", () => {
+    const result = simulateRun({
+      // discard, discard, discard, discard, KEEP, discard, discard, discard, discard, KEEP
+      scores: [0.70, 0.70, 0.70, 0.70, 0.85, 0.70, 0.70, 0.70, 0.70, 0.90],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 5,
+    });
+    expect(result.stoppedEarly).toBe(false);
+    expect(result.iterationsRun).toBe(10);
+    expect(result.kept).toBe(2);
+  });
+
+  test("stops exactly at maxStale even after a kept iteration resets counter", () => {
+    const result = simulateRun({
+      // KEEP resets, then 3 consecutive discards triggers stop
+      scores: [0.85, 0.70, 0.70, 0.70],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 3,
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.iterationsRun).toBe(4);
+    expect(result.kept).toBe(1);
+    expect(result.discarded).toBe(3);
+  });
+
+  test("completes all iterations when maxStale is not reached", () => {
+    const result = simulateRun({
+      scores: [0.70, 0.70, 0.85, 0.70, 0.90],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 5,
+    });
+    expect(result.stoppedEarly).toBe(false);
+    expect(result.iterationsRun).toBe(5);
+  });
+
+  test("maxStale of 1 stops on first discard", () => {
+    const result = simulateRun({
+      scores: [0.70, 0.85, 0.90],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 1,
+    });
+    expect(result.stoppedEarly).toBe(true);
+    expect(result.iterationsRun).toBe(1);
+    expect(result.discarded).toBe(1);
+  });
+
+  test("all iterations kept means no early stop", () => {
+    const result = simulateRun({
+      scores: [0.81, 0.82, 0.83, 0.84, 0.85],
+      watermark: 0.80,
+      minDelta: 0.001,
+      maxStale: 3,
+    });
+    expect(result.stoppedEarly).toBe(false);
+    expect(result.kept).toBe(5);
+    expect(result.discarded).toBe(0);
+  });
+});

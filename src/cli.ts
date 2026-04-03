@@ -33,6 +33,7 @@ program
   .option("--judge-model <model>", "Judge model (defaults to --model)")
   .option("--fresh", "Start fresh, ignoring any saved state")
   .option("--max-spend <dollars>", "Maximum USD to spend on API calls before stopping")
+  .option("--max-stale <n>", "Stop after N consecutive discarded iterations (default: 5)", "5")
   .action(startCommand);
 
 program
@@ -53,6 +54,7 @@ program
   .option("--quality-margin <margin>", "Acceptable quality drop for token savings (default: 0.03)")
   .option("--min-token-reduction <pct>", "Min token reduction % to accept quality drop (default: 0.10)")
   .option("--max-spend <dollars>", "Maximum USD to spend on API calls")
+  .option("--max-stale <n>", "Stop after N consecutive discarded iterations (default: 5)", "5")
   .action(compressCommand);
 
 program

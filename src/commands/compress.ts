@@ -25,6 +25,7 @@ interface CompressOptions {
   qualityMargin?: string;
   minTokenReduction?: string;
   maxSpend?: string;
+  maxStale?: string;
 }
 
 export async function compressCommand(options: CompressOptions) {
@@ -96,6 +97,7 @@ export async function compressCommand(options: CompressOptions) {
   const initialTokens = countTokens(promptContent, model);
   const initialStats = getTokenStats(promptContent, model);
   const runId = generateRunId();
+  const maxStale = parseInt(options.maxStale || "5", 10);
 
   header(`Compress ${c.dim}[${runId}]${c.reset}`, [
     ["Prompt", `${config.prompt}  ${c.dim}${initialTokens} tokens (${formatCost(initialStats.estimatedCostPerCall)}/call)${c.reset}`],
@@ -104,11 +106,12 @@ export async function compressCommand(options: CompressOptions) {
     ["Quality bar", `${c.bold}${qualityBar.toFixed(4)}${c.reset} ${c.dim}(margin: ±${qualityMargin.toFixed(4)}, floor: ${(qualityBar - qualityMargin).toFixed(4)})${c.reset}`],
     ["Min token reduction", `${(minTokenReduction * 100).toFixed(0)}%`],
     ["Watermark", `${c.bold}${watermark.toFixed(4)}${c.reset}`],
+    ["Max stale", `${maxStale}`],
   ]);
-
   let kept = 0;
   let discarded = 0;
   let totalSpend = 0;
+  let consecutiveDiscards = 0;
   let currentTokens = initialTokens;
   let bestScore = watermark;
 
@@ -144,6 +147,11 @@ export async function compressCommand(options: CompressOptions) {
     } catch (err) {
       proposeStatus.fail(`${err}`);
       discarded++;
+      consecutiveDiscards++;
+      if (consecutiveDiscards >= maxStale) {
+        console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+        break;
+      }
       continue;
     }
 
@@ -161,6 +169,11 @@ export async function compressCommand(options: CompressOptions) {
       const iterCost = estimateCost(model, agentResult.inputTokens, agentResult.outputTokens);
       totalSpend += iterCost;
       discarded++;
+      consecutiveDiscards++;
+      if (consecutiveDiscards >= maxStale) {
+        console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+        break;
+      }
       continue;
     }
 
@@ -216,6 +229,7 @@ export async function compressCommand(options: CompressOptions) {
         elapsed: iterTimer.format(),
       });
       kept++;
+      consecutiveDiscards = 0;
     } else {
       await Bun.write(promptPath, originalContent);
 
@@ -243,6 +257,12 @@ export async function compressCommand(options: CompressOptions) {
         elapsed: iterTimer.format(),
       });
       discarded++;
+      consecutiveDiscards++;
+    }
+
+    if (consecutiveDiscards >= maxStale) {
+      console.log(`\n  ${c.yellow}⚠${c.reset} ${maxStale} consecutive discards — stopping early (likely at peak)`);
+      break;
     }
   }
 
