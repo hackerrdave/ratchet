@@ -1,0 +1,52 @@
+[
+  {
+    "code": "async function fetchUserProfile(userId: string) {\n  try {\n    const response = await fetch(`/api/users/${userId}`);\n    const data = await response.json();\n    return data;\n  } catch {\n    return null;\n  }\n}",
+    "context": "User profile fetcher in a React dashboard app",
+    "expected": "CRITICAL: Empty catch block returns null with no logging or error context. The caller has no way to distinguish 'user not found' from 'network error' from 'JSON parse error'. Fix: log the error, differentiate error types, and either throw a typed error or return a discriminated result type. Hidden errors: network failures, 4xx/5xx responses, malformed JSON, CORS issues."
+  },
+  {
+    "code": "function loadConfig() {\n  try {\n    const raw = fs.readFileSync('./config.json', 'utf-8');\n    return JSON.parse(raw);\n  } catch {\n    return {\n      port: 3000,\n      host: 'localhost',\n      debug: false,\n    };\n  }\n}",
+    "context": "Configuration loader for a Node.js web server",
+    "expected": "HIGH: Silent fallback to defaults hides config problems. If config.json has a syntax error, the server starts with defaults and the user never knows their config was ignored. Fix: differentiate ENOENT (file missing — defaults are fine) from SyntaxError (malformed config — should fail loudly). Log which path was taken. Hidden errors: permission denied, disk full, JSON parse error, wrong file encoding."
+  },
+  {
+    "code": "class EventBus {\n  private handlers: Map<string, Function[]> = new Map();\n\n  emit(event: string, data: unknown) {\n    const handlers = this.handlers.get(event) || [];\n    for (const handler of handlers) {\n      try {\n        handler(data);\n      } catch (e) {\n        console.log('handler error', e);\n      }\n    }\n  }\n}",
+    "context": "Internal event bus for a microservices application",
+    "expected": "HIGH: Errors in event handlers are caught, minimally logged with console.log, and swallowed. A failing handler never surfaces to the caller and never triggers alerting. If a critical handler (e.g., payment processing) throws, the system continues as if it succeeded. Fix: use a proper logger with severity level, emit an 'error' event or call a registered error handler, and consider whether some handler failures should propagate. Hidden errors: type errors, async rejections (handler returns a promise that rejects — not caught by try/catch)."
+  },
+  {
+    "code": "async function syncInventory(products: Product[]) {\n  const results = await Promise.allSettled(\n    products.map(p => updateStock(p.id, p.quantity))\n  );\n\n  const succeeded = results.filter(r => r.status === 'fulfilled').length;\n  console.log(`Synced ${succeeded}/${products.length} products`);\n}",
+    "context": "Inventory sync job that runs every 5 minutes in an e-commerce backend",
+    "expected": "HIGH: Failed sync operations are silently counted but never examined. The log message shows how many succeeded but discards the rejection reasons entirely. If 50% of products fail to sync, the only signal is a log line like 'Synced 500/1000 products' with no information about what failed or why. Fix: extract and log the failed results with their error details, alert if failure rate exceeds a threshold, and include the product IDs that failed so they can be retried."
+  },
+  {
+    "code": "export async function processPayment(orderId: string, amount: number) {\n  const stripe = new Stripe(process.env.STRIPE_KEY!);\n\n  try {\n    const charge = await stripe.charges.create({\n      amount: Math.round(amount * 100),\n      currency: 'usd',\n      source: 'tok_visa',\n    });\n    await db.orders.update(orderId, { status: 'paid', chargeId: charge.id });\n    return { success: true };\n  } catch (error) {\n    await db.orders.update(orderId, { status: 'failed' });\n    return { success: false };\n  }\n}",
+    "context": "Payment processing function in an e-commerce checkout flow",
+    "expected": "CRITICAL: The catch block returns { success: false } without logging the error or including any error details. The caller cannot distinguish a declined card from a Stripe outage from a database error. The db.update in the catch could also throw (e.g., if the database is down), causing an unhandled rejection. Fix: log the error with full context (orderId, amount, error type), include error details in the return value, wrap the db.update in its own try/catch, and differentiate Stripe errors (retryable vs terminal) from database errors."
+  },
+  {
+    "code": "function getUserDisplayName(user?: User): string {\n  return user?.profile?.displayName ?? user?.email?.split('@')[0] ?? 'Anonymous';\n}",
+    "context": "Display name resolver used in comment threads and activity feeds",
+    "expected": "No significant silent failure issues. This is a reasonable use of optional chaining for a display-only function. The fallback chain (displayName → email prefix → 'Anonymous') is a valid UI pattern where showing something is better than crashing. The function is pure and has no side effects that could be silently skipped."
+  },
+  {
+    "code": "app.use(async (err: Error, req: Request, res: Response, next: NextFunction) => {\n  console.error(err);\n  res.status(500).json({ error: 'Something went wrong' });\n});",
+    "context": "Global Express error handler for a production REST API",
+    "expected": "MEDIUM: The error handler catches everything but returns a generic message with no error ID or correlation. When users report 'Something went wrong', support has to search logs by timestamp. Fix: generate a unique error ID, include it in the response and the log line, add request context (method, path, userId), and use structured logging instead of console.error. Also: differentiate expected errors (validation, auth) from unexpected ones (unhandled throws)."
+  },
+  {
+    "code": "async function migrateUsers(users: LegacyUser[]) {\n  let migrated = 0;\n  let failed = 0;\n\n  for (const user of users) {\n    try {\n      await createNewUser(transformUser(user));\n      migrated++;\n    } catch {\n      failed++;\n    }\n  }\n\n  return { migrated, failed };\n}",
+    "context": "One-time data migration script for moving users to a new schema",
+    "expected": "CRITICAL: Failed user migrations are counted but all error details are discarded — no logging of which users failed or why. After the migration completes, there's no way to retry failures or investigate issues. A TypeError in `transformUser` and a database constraint violation look identical. Fix: collect failed user IDs and their error messages in an array, log each failure as it occurs, and return the failure details so they can be investigated and retried."
+  },
+  {
+    "code": "class DatabasePool {\n  private pool: Pool;\n\n  async query(sql: string, params?: unknown[]) {\n    let retries = 3;\n    while (retries > 0) {\n      try {\n        return await this.pool.query(sql, params);\n      } catch {\n        retries--;\n        if (retries === 0) throw new Error('Query failed');\n        await new Promise(r => setTimeout(r, 1000));\n      }\n    }\n  }\n}",
+    "context": "Database connection wrapper used across a Node.js backend",
+    "expected": "HIGH: The retry loop catches all errors equally and discards the original error. A syntax error in SQL gets retried 3 times (pointlessly) and the final throw loses the original error message. Fix: only retry on transient errors (connection reset, timeout), fail immediately on permanent errors (syntax, constraint violations), include the original error in the final throw, and log each retry attempt with the error reason. Hidden errors: auth failures, permission denied, query syntax errors — all retried needlessly."
+  },
+  {
+    "code": "async function sendNotification(userId: string, message: string) {\n  const user = await getUser(userId);\n  if (!user) return;\n\n  const preferences = await getNotificationPreferences(userId);\n\n  if (preferences?.email) {\n    await sendEmail(user.email, message).catch(() => {});\n  }\n\n  if (preferences?.push) {\n    await sendPushNotification(user.deviceToken, message).catch(() => {});\n  }\n\n  if (preferences?.sms) {\n    await sendSMS(user.phone, message).catch(() => {});\n  }\n}",
+    "context": "Notification dispatch system for a healthcare application",
+    "expected": "CRITICAL: All notification delivery errors are swallowed with `.catch(() => {})`. In a healthcare app, a failed notification (appointment reminder, test result, medication alert) could have serious consequences and nobody would know. The `if (!user) return` also silently exits if the user lookup fails. Fix: log each delivery failure with context (userId, channel, error), track delivery status per channel, alert on repeated failures, and consider the `if (!user) return` — should this throw or at least log? Hidden errors: invalid email addresses, expired push tokens, SMS provider outages."
+  }
+]

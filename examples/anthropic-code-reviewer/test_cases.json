@@ -1,0 +1,62 @@
+[
+  {
+    "diff": "+app.get('/users/:id', async (req, res) => {\n+  const user = await db.query(`SELECT * FROM users WHERE id = '${req.params.id}'`);\n+  res.json(user.rows[0]);\n+});",
+    "context": "Express.js REST API — new endpoint for fetching user by ID",
+    "expected": "SQL injection vulnerability (confidence: 95). User input `req.params.id` is interpolated directly into the query string. An attacker could pass `' OR 1=1 --` as the ID. Fix: use parameterized queries — `db.query('SELECT * FROM users WHERE id = $1', [req.params.id])`. Secondary: add a 404 response when `user.rows[0]` is undefined."
+  },
+  {
+    "diff": "+async function processOrders(orders: Order[]) {\n+  for (const order of orders) {\n+    await sendEmail(order.userEmail, order.receipt);\n+    await updateInventory(order.items);\n+    await chargePayment(order.paymentMethod, order.total);\n+  }\n+}",
+    "context": "Order processing pipeline that runs after checkout in an e-commerce app",
+    "expected": "Critical ordering bug (confidence: 90). If `chargePayment` fails after `sendEmail` succeeds, the customer receives a receipt for an uncharged order. Fix: reorder operations — charge payment first, then update inventory, then send email. Also add error handling so a failure in one order doesn't block the entire batch."
+  },
+  {
+    "diff": "+const API_KEY = 'sk-proj-abc123def456ghi789';\n+const STRIPE_SECRET = 'sk_live_51ABC123DEF456';\n+\n+export async function chargeCustomer(customerId: string, amount: number) {\n+  return fetch('https://api.stripe.com/v1/charges', {\n+    method: 'POST',\n+    headers: { 'Authorization': `Bearer ${STRIPE_SECRET}` },\n+    body: new URLSearchParams({ customer: customerId, amount: String(amount), currency: 'usd' }),\n+  });\n+}",
+    "context": "Payment utility module in a Node.js backend",
+    "expected": "Hardcoded production secrets (confidence: 95). `API_KEY` and `STRIPE_SECRET` are hardcoded and will be committed to version control. These are live Stripe credentials. Fix: use environment variables — `process.env.STRIPE_SECRET`. Also `API_KEY` is defined but unused — remove it."
+  },
+  {
+    "diff": " function calculateDiscount(price: number, userType: string): number {\n-  return price * 0.9;\n+  if (userType === 'premium') {\n+    return price * 0.8;\n+  } else if (userType === 'gold') {\n+    return price * 0.85;\n+  } else if (userType === 'silver') {\n+    return price * 0.9;\n+  } else if (userType === 'bronze') {\n+    return price * 0.95;\n+  } else {\n+    return price;\n+  }\n }",
+    "context": "Pricing module in a SaaS billing system",
+    "expected": "Magic numbers and fragile branching (confidence: 80). Discount multipliers are scattered across branches. Extract to a lookup map: `const DISCOUNT: Record<string, number> = { premium: 0.8, gold: 0.85, silver: 0.9, bronze: 0.95 }; return price * (DISCOUNT[userType] ?? 1);`. Also consider a union type for `userType` to catch typos at compile time."
+  },
+  {
+    "diff": "+export function UserList({ users }: { users: User[] }) {\n+  const [search, setSearch] = useState('');\n+  const [sortBy, setSortBy] = useState('name');\n+  const [page, setPage] = useState(0);\n+\n+  const filtered = users\n+    .filter(u => u.name.toLowerCase().includes(search.toLowerCase()))\n+    .sort((a, b) => a[sortBy].localeCompare(b[sortBy]))\n+    .slice(page * 50, (page + 1) * 50);\n+\n+  return (\n+    <div>\n+      <input onChange={e => setSearch(e.target.value)} />\n+      {filtered.map(u => <UserCard key={u.id} user={u} />)}\n+    </div>\n+  );\n+}",
+    "context": "React component for a searchable, sortable user list in an admin dashboard",
+    "expected": "Performance issue (confidence: 85). The filter/sort/slice chain runs on every render. With large `users` arrays this causes jank. Wrap in `useMemo` with `[users, search, sortBy, page]` dependencies. Also, `page` should reset to 0 when `search` changes — otherwise users may see an empty page after filtering narrows results."
+  },
+  {
+    "diff": "+app.post('/webhook', async (req, res) => {\n+  const event = req.body;\n+  res.sendStatus(200);\n+  await processWebhookEvent(event);\n+});",
+    "context": "Stripe webhook handler in an Express.js billing service",
+    "expected": "Missing webhook signature verification (confidence: 95). The webhook accepts any POST body without validating the Stripe signature. An attacker can forge webhook events. Fix: verify using `stripe.webhooks.constructEvent(req.rawBody, req.headers['stripe-signature'], webhookSecret)`. Also: if `processWebhookEvent` throws after the 200 response, the event is silently lost — add error handling with a retry queue."
+  },
+  {
+    "diff": "+export async function migrate() {\n+  await db.query('DROP TABLE IF EXISTS users');\n+  await db.query('CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT, email TEXT)');\n+  await db.query('DROP TABLE IF EXISTS orders');\n+  await db.query('CREATE TABLE orders (id SERIAL PRIMARY KEY, user_id INT, total NUMERIC)');\n+}",
+    "context": "Database migration script for a production application",
+    "expected": "Destructive migration (confidence: 95). Running this in production drops all user and order data. Migrations should be additive — use `CREATE TABLE IF NOT EXISTS` for initial setup, `ALTER TABLE` for changes. Wrap in a transaction so partial failures don't leave the database in an inconsistent state. Never use `DROP TABLE` in a migration unless it's a deliberate, documented data deletion."
+  },
+  {
+    "diff": "+class CacheService {\n+  private cache: Map<string, any> = new Map();\n+\n+  set(key: string, value: any): void {\n+    this.cache.set(key, value);\n+  }\n+\n+  get(key: string): any {\n+    return this.cache.get(key);\n+  }\n+}",
+    "context": "In-memory cache service for a Node.js API server handling 10K+ RPM",
+    "expected": "Unbounded memory growth (confidence: 85). This cache grows without limit — at 10K+ RPM it will eventually exhaust memory and crash the process. Add TTL-based expiry and/or a max size with LRU eviction. Consider: `Map<string, { value: T, expiresAt: number }>` with periodic cleanup. Also: using `any` loses all type safety — make it generic: `CacheService<T>`."
+  },
+  {
+    "diff": "+router.post('/login', async (req, res) => {\n+  const { email, password } = req.body;\n+  const user = await db.query('SELECT * FROM users WHERE email = $1', [email]);\n+\n+  if (!user.rows[0]) {\n+    return res.status(401).json({ error: 'User not found' });\n+  }\n+\n+  if (user.rows[0].password !== password) {\n+    return res.status(401).json({ error: 'Wrong password' });\n+  }\n+\n+  const token = jwt.sign({ userId: user.rows[0].id }, SECRET);\n+  res.json({ token });\n+});",
+    "context": "Authentication endpoint for a web application",
+    "expected": "Multiple security issues (confidence: 95). (1) Passwords stored and compared as plaintext — must use bcrypt: `await bcrypt.compare(password, user.rows[0].password_hash)`. (2) Different error messages for 'user not found' vs 'wrong password' enable user enumeration attacks — use a single generic message like 'Invalid credentials'. (3) JWT has no expiration — add `expiresIn` option."
+  },
+  {
+    "diff": "+export async function transferFunds(fromId: string, toId: string, amount: number) {\n+  await db.query('UPDATE accounts SET balance = balance - $1 WHERE id = $2', [amount, fromId]);\n+  await db.query('UPDATE accounts SET balance = balance + $1 WHERE id = $2', [amount, toId]);\n+}",
+    "context": "Fund transfer function in a fintech application",
+    "expected": "Missing transaction boundary (confidence: 95). If the second query fails, money is deducted from `fromId` but never credited to `toId` — funds are lost. Wrap both queries in a database transaction: `BEGIN`, execute both, `COMMIT` (or `ROLLBACK` on error). Also: no check that `fromId` has sufficient balance — could go negative."
+  },
+  {
+    "diff": "+app.get('/files/:name', (req, res) => {\n+  const filePath = path.join('/uploads', req.params.name);\n+  res.sendFile(filePath);\n+});",
+    "context": "File download endpoint in an Express.js application",
+    "expected": "Path traversal vulnerability (confidence: 95). A request to `/files/../../etc/passwd` would resolve to a path outside `/uploads` and leak sensitive system files. Fix: validate that the resolved path starts with the uploads directory — `const resolved = path.resolve('/uploads', req.params.name); if (!resolved.startsWith('/uploads/')) return res.status(403).send('Forbidden');`. Also reject names containing `..`."
+  },
+  {
+    "diff": "+function debounce(fn: Function, ms: number) {\n+  let timer: any;\n+  return (...args: any[]) => {\n+    clearTimeout(timer);\n+    timer = setTimeout(() => fn(...args), ms);\n+  };\n+}",
+    "context": "Utility function in a TypeScript frontend project with strict mode enabled",
+    "expected": "No high-confidence issues. This is a standard debounce implementation. Minor type improvements possible (`Function` → specific signature, `any` → generics) but these are style nitpicks, not bugs. The logic is correct."
+  }
+]
