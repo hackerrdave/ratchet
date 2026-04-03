@@ -10,7 +10,7 @@ import {
 } from "../lib/config.ts";
 import { runJudge } from "../lib/judge.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
-import { appendProgress, snapshotLever, type ProgressEntry } from "../lib/progress.ts";
+import { appendProgress, snapshotLever, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
 import { runAgent } from "../lib/agent.ts";
 import { extractLearnings } from "../lib/learnings.ts";
 import { readState, writeState, clearState, generateRunId } from "../lib/state.ts";
@@ -116,6 +116,9 @@ export async function startCommand(options: StartOptions) {
   ];
   if (maxSpend !== undefined) items.push(["Max spend", formatCost(maxSpend)]);
   header(`Ratchet ${c.dim}[${runId}]${c.reset}`, items);
+
+  // Save the original prompt before any mutations
+  await snapshotOriginal(cwd, config.prompt);
 
   let kept = 0;
   let discarded = 0;

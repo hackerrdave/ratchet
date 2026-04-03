@@ -11,7 +11,7 @@ import {
 } from "../lib/config.ts";
 import { runJudge } from "../lib/judge.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
-import { appendProgress, snapshotLever, type ProgressEntry } from "../lib/progress.ts";
+import { appendProgress, snapshotLever, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
 import { runCompressAgent } from "../lib/agent.ts";
 import { countTokens, getTokenStats } from "../lib/tokens.ts";
 import { generateRunId } from "../lib/state.ts";
@@ -108,6 +108,9 @@ export async function compressCommand(options: CompressOptions) {
     ["Watermark", `${c.bold}${watermark.toFixed(4)}${c.reset}`],
     ["Max stale", `${maxStale}`],
   ]);
+  // Save the original prompt before any mutations
+  await snapshotOriginal(cwd, config.prompt);
+
   let kept = 0;
   let discarded = 0;
   let totalSpend = 0;

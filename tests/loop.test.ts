@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { readProgressLog, appendProgress, type ProgressEntry } from "../src/lib/progress.ts";
+import { readProgressLog, appendProgress, snapshotOriginal, type ProgressEntry } from "../src/lib/progress.ts";
 import { readWatermark, writeWatermark } from "../src/lib/watermark.ts";
 import { join } from "path";
 import { mkdtemp, rm, mkdir } from "fs/promises";
@@ -103,6 +103,46 @@ describe("accept/reject/rollback logic", () => {
     }
     const entries = await readProgressLog(tmpDir);
     expect(entries).toHaveLength(3);
+  });
+});
+
+describe("original snapshot", () => {
+  test("saves original prompt content to snapshots/original/", async () => {
+    const leverPath = "prompt.md";
+    const originalContent = "This is the original prompt content";
+    await Bun.write(join(tmpDir, leverPath), originalContent);
+
+    await snapshotOriginal(tmpDir, leverPath);
+
+    const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/prompt.md");
+    const saved = await Bun.file(snapshotPath).text();
+    expect(saved).toBe(originalContent);
+  });
+
+  test("does not overwrite existing original snapshot", async () => {
+    const leverPath = "prompt.md";
+    await Bun.write(join(tmpDir, leverPath), "first version");
+    await snapshotOriginal(tmpDir, leverPath);
+
+    // Change the prompt and snapshot again
+    await Bun.write(join(tmpDir, leverPath), "second version");
+    await snapshotOriginal(tmpDir, leverPath);
+
+    const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/prompt.md");
+    const saved = await Bun.file(snapshotPath).text();
+    expect(saved).toBe("first version");
+  });
+
+  test("handles nested lever paths", async () => {
+    const leverPath = "prompts/system.md";
+    await mkdir(join(tmpDir, "prompts"), { recursive: true });
+    await Bun.write(join(tmpDir, leverPath), "nested prompt");
+
+    await snapshotOriginal(tmpDir, leverPath);
+
+    const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/system.md");
+    const saved = await Bun.file(snapshotPath).text();
+    expect(saved).toBe("nested prompt");
   });
 });
 

@@ -47,6 +47,26 @@ export async function appendProgress(cwd: string, entry: ProgressEntry): Promise
   await Bun.write(path, existing + JSON.stringify(entry) + "\n");
 }
 
+export async function snapshotOriginal(
+  cwd: string,
+  leverPath: string,
+): Promise<void> {
+  const snapshotDir = join(cwd, SNAPSHOTS_DIR, "original");
+  await mkdir(snapshotDir, { recursive: true });
+
+  const sourcePath = join(cwd, leverPath);
+  const filename = leverPath.split("/").pop() || "lever";
+  const destPath = join(snapshotDir, filename);
+
+  // Only save if not already present (don't overwrite across runs)
+  if (await Bun.file(destPath).exists()) return;
+
+  if (await Bun.file(sourcePath).exists()) {
+    const content = await Bun.file(sourcePath).text();
+    await Bun.write(destPath, content);
+  }
+}
+
 export async function snapshotLever(
   cwd: string,
   leverPath: string,
