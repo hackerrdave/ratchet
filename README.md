@@ -1,21 +1,300 @@
 # Ratchet
 
-Agentic optimization loop with high watermarking. Ratchet uses Claude to iteratively improve a single file (the "lever") against a scorer, accepting only changes that beat the current high watermark. Like a ratchet wrench — it only moves forward.
+Agentic prompt optimization with high watermarking. Ratchet uses an LLM proposer to iteratively improve a prompt, scores each change with a built-in LLM judge, and only keeps changes that beat the current high watermark. Like a ratchet wrench — it only moves forward.
+
+Then it compresses the prompt for token efficiency while keeping quality above a configurable bar.
 
 ## How It Works
 
 ```
-┌─────────┐     ┌───────┐     ┌────────┐     ┌──────────┐
-│  Agent   │────▶│ Lever │────▶│ Scorer │────▶│ Watermark│
-│ (Claude) │     │ (file)│     │ (sh)   │     │  check   │
-└─────────┘     └───────┘     └────────┘     └──────────┘
-     ▲                                            │
-     │            ✓ kept (score > watermark)       │
-     └────────────────────────────────────────────┘
-                  ✗ discarded (rollback)
+┌───────────┐     ┌────────┐     ┌─────────┐     ┌───────────┐
+│ Proposer  │────▶│ Prompt │────▶│  Judge  │────▶│ Watermark │
+│ (Claude)  │     │ (.md)  │     │ (Claude)│     │   check   │
+└───────────┘     └────────┘     └─────────┘     └───────────┘
+      ▲                                                │
+      │              ✓ kept (score > watermark)        │
+      └────────────────────────────────────────────────┘
+                     ✗ discarded (rollback)
 ```
 
-Each iteration, Claude proposes a single targeted change to the lever file. The scorer evaluates the result and produces a numeric score. If the score exceeds the current watermark by at least `--min-delta`, the change is kept and the watermark ratchets up. Otherwise, the change is rolled back. Progress is logged and snapshots are saved for every accepted iteration.
+**Proposer** — Claude reads your RATCHET.md spec, the current prompt, progress history, and learnings, then suggests one targeted change.
+
+**Judge** — The built-in LLM judge runs the modified prompt against your test cases, then scores each response against your eval criteria. No custom scorer code needed.
+
+**Watermark** — If the score beats the current watermark by at least `--min-delta`, the change is kept. Otherwise it's rolled back.
+
+## A Prompt Project is Three Files
+
+```
+prompt.md          ← the prompt being optimized
+test_cases.json    ← inputs + expected outputs
+RATCHET.md         ← goal, constraints, eval criteria
+```
+
+That's it. Ratchet handles everything else.
+
+## Quick Start
+
+```bash
+# Install
+git clone git@github.com:hackerrdave/ratchet.git
+cd ratchet && bun install
+
+# Link globally
+bun link
+
+# Go to an example
+cd examples/commit-writer
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Phase 1: Optimize quality
+ratchet start -n 10
+
+# Inspect the prompt's tokenization
+ratchet tokens -m stats
+
+# Phase 2: Compress for token efficiency
+ratchet compress -n 5
+
+# Review everything
+ratchet log
+ratchet learnings
+```
+
+## RATCHET.md
+
+One file configures both sides of the loop — the proposer and the judge:
+
+```markdown
+# Goal
+Improve the commit message prompt to generate accurate conventional commits.
+
+# Prompt
+prompt.md
+
+# Constraints
+- Must keep the {{diff}} placeholder
+- Must output only the commit message, no explanation
+- Must use conventional commit format (type: description)
+
+# Eval
+- Test cases: test_cases.json
+- Target: claude-haiku-4-5-20251001
+- Correct commit type (30%)
+- Accurately describes the change (40%)
+- Conventional commit format with no extra text (15%)
+- Concise — single line, under 72 characters (15%)
+
+# Context
+- Read test_cases.json to see the range of diffs and expected messages
+```
+
+| Section | Purpose |
+|---------|---------|
+| **Goal** | What "better" means — fed to the proposer |
+| **Prompt** | The file being optimized (the only file ratchet modifies) |
+| **Constraints** | Rules the proposer must follow |
+| **Eval** | Test cases, target model, and scoring criteria for the judge |
+| **Context** | Additional files the proposer should read |
+
+### Eval Section
+
+- **Test cases** — Path to a JSON file: `[{"field": "value", "expected": "..."}, ...]`. All fields except `expected` get substituted into the prompt as `{{field}}`. The judge compares LLM output against `expected`.
+- **Target** — The model your prompt is designed for. Runs test cases and judges output. Optional — defaults to haiku.
+- **Criteria** — Natural language scoring criteria with optional percentage weights. The judge evaluates all criteria for each test case and computes a weighted score.
+
+## Commands
+
+### `ratchet start` — Quality Phase
+
+```bash
+ratchet start -n 20 --model claude-haiku-4-5-20251001
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-n, --iterations` | 20 | Number of iterations |
+| `--min-delta` | 0.001 | Minimum improvement to accept |
+| `--model` | claude-haiku-4-5-20251001 | Proposer model |
+| `--judge-model` | (target model) | Override judge model |
+| `--fresh` | — | Start fresh, ignore saved state |
+| `--max-spend` | — | Budget cap in USD |
+
+Each iteration shows a spinner while proposing and judging, then a structured result:
+
+```
+  Ratchet [a1b2c3d4]
+  ──────────────────────────────────────────────────
+  Prompt               prompt.md  24 tokens ($0.0000/call)
+  Test cases           test_cases.json
+  Proposer             claude-haiku-4-5-20251001
+  Iterations           10
+  Watermark            0.7500
+
+  ⠹ [1/10] Proposing (3.2s)
+  ✓ [1/10] Proposing (4.1s)
+  ⠹ [1/10] Judging (test_cases.json) (5.1s)
+  ✓ [1/10] Judging (test_cases.json) (8.3s)
+  [1/10] ✓ kept  0.8200 (+0.0700) │ 48tok │ $0.0034 │ 12.3s
+         Add explicit type prefix examples for common patterns
+
+  [2/10] ✗ disc  0.7900 (-0.0300) │ 62tok │ $0.0041 │ 14.1s
+         Add instruction to analyze file extensions
+
+  Done
+  ──────────────────────────────────────────────────
+  Kept                 4
+  Discarded            6
+  Watermark            0.8650
+  Total spend          $0.0382
+```
+
+### `ratchet compress` — Efficiency Phase
+
+Optimize token count while keeping quality within a margin:
+
+```bash
+ratchet compress -n 10 --quality-margin 0.03
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-n, --iterations` | 10 | Compression attempts |
+| `--model` | claude-haiku-4-5-20251001 | Proposer model |
+| `--judge-model` | (target model) | Override judge model |
+| `--quality-bar` | (current watermark) | Quality score to protect |
+| `--quality-margin` | 0.03 | Acceptable quality drop |
+| `--min-token-reduction` | 0.10 | Required token savings to justify any quality drop |
+| `--max-spend` | — | Budget cap in USD |
+
+Acceptance criteria:
+- Quality must stay ≥ quality bar − margin
+- Tokens must decrease
+- If quality drops: token reduction must be ≥ 10% (configurable)
+
+### `ratchet tokens` — Visualize Tokenization
+
+See how the LLM tokenizes your prompt:
+
+```bash
+ratchet tokens              # color mode (default)
+ratchet tokens -m stats     # aggregate breakdown
+ratchet tokens -m heatmap   # efficiency heatmap
+ratchet tokens -m boundary  # pipe-delimited tokens
+ratchet tokens -m ids       # token ID table
+ratchet tokens -f any.md    # any file, not just the prompt
+```
+
+Stats mode shows token distribution, most common tokens, chars/token ratio, and cost projections at various call volumes.
+
+### `ratchet log` — Iteration History
+
+```bash
+ratchet log
+```
+
+```
+  Ratchet log
+  ──────────────────────────────────────────────────
+  Iterations           10 (7 kept, 3 discarded)
+  Total cost           $0.01
+  Model                claude-haiku-4-5-20251001
+  Score                0.7800 → 0.8900
+
+    1 ✓ 0.8200 +0.0400 │ 482tok │ $0.0012 │ quality
+      Add structured output format with JSON schema
+    2 ✗ 0.8100 -0.0100 │ 531tok │ $0.0014 │ quality
+      Add chain-of-thought reasoning section
+    ...
+    1 ✓ 0.8850 -0.0050 │ 580tok │ $0.0015 │ efficiency
+      Merge redundant JSON instructions into single block
+
+  Token trajectory
+  ──────────────────────────────────────────────────
+  Tokens               482 → 465 (-17, -3.5%)
+                       ▂▅▆█▅▃▁
+  Quality              482 → 648 tokens (4 kept)
+  Efficiency           580 → 465 tokens (3 kept)
+```
+
+### `ratchet learnings` — What Worked and What Didn't
+
+```bash
+ratchet learnings
+```
+
+After each run, Claude extracts tactical learnings from the progress log. These are formatted with section icons and word-wrapped explanations, and fed back to the proposer on subsequent runs.
+
+### Other Commands
+
+```bash
+ratchet init              # Scaffold RATCHET.md interactively
+ratchet watch             # Live staircase chart during a run
+ratchet diff 1 3          # Diff prompt between two kept iterations
+ratchet show 3            # Print prompt at a specific iteration
+ratchet checkout 3        # Restore prompt to a specific iteration
+ratchet pause             # Stop after current iteration
+ratchet resume            # Clear pause flag
+```
+
+## Models
+
+Three distinct model roles:
+
+| Role | Set by | Purpose |
+|------|--------|---------|
+| **Proposer** | `--model` flag | The optimizer that suggests prompt changes |
+| **Target** | `Target:` in RATCHET.md `# Eval` | The model your prompt is *for*. Runs test cases and (by default) judges output. |
+| **Judge** | `--judge-model` flag | Scores responses against criteria. Defaults to target model. |
+
+Use a cheap proposer with a smarter judge:
+
+```bash
+ratchet start --model claude-haiku-4-5-20251001 --judge-model claude-sonnet-4-20250514
+```
+
+Both models are recorded in every progress entry so you always know what produced the results.
+
+## Project Layout
+
+```
+my-prompt/
+  prompt.md              ← your prompt (the thing ratchet optimizes)
+  test_cases.json        ← inputs + expected outputs
+  RATCHET.md             ← config: goal, constraints, eval criteria
+  .ratchet/              ← all generated output (gitignore this)
+    watermark.txt        ←   current high watermark
+    progress.log         ←   JSONL iteration history
+    learnings.md         ←   extracted tactical learnings
+    state.json           ←   resume checkpoint (deleted on completion)
+    best/prompt.md       ←   best prompt so far
+    snapshots/           ←   prompt at each kept iteration
+      1/prompt.md
+      3/prompt.md
+      ...
+```
+
+Add `.ratchet/` to your `.gitignore`. The only files you author are `prompt.md`, `test_cases.json`, and `RATCHET.md`.
+
+## Examples
+
+### Prompt Grader
+
+Sentiment classification — optimize a prompt for accuracy, valid JSON, and confidence scores.
+
+```bash
+cd examples/prompt-grader
+ratchet start -n 15
+```
+
+### Commit Writer
+
+Generate conventional commit messages from git diffs.
+
+```bash
+cd examples/commit-writer
+ratchet start -n 10
+```
 
 ## Installation
 
@@ -30,320 +309,23 @@ Each iteration, Claude proposes a single targeted change to the lever file. The 
 git clone git@github.com:hackerrdave/ratchet.git
 cd ratchet
 bun install
+bun link   # makes `ratchet` available globally
 ```
 
-Run directly with Bun:
+### Compile to Binary
 
 ```bash
-bun run src/cli.ts <command>
+bun run build           # ./dist/ratchet
+bun run build:all       # macOS, Linux, Windows
 ```
 
-Or compile to a standalone binary:
+## Development
 
 ```bash
-bun run build
-./dist/ratchet <command>
+bun run src/cli.ts <command>   # run in dev
+bun test                       # 86 tests
+bun run typecheck              # type check
 ```
-
-### Cross-Platform Builds
-
-```bash
-bun run build:all
-# Produces:
-#   dist/ratchet-macos    (darwin-arm64)
-#   dist/ratchet-linux    (linux-x64)
-#   dist/ratchet-windows.exe
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
-
-### `ratchet init`
-
-Run `ratchet init` in your project root to set everything up interactively. It walks you through:
-
-1. **Scorer type** — how you'll measure improvement:
-   - **Objective** — a test suite, build script, latency benchmark, or any command that outputs a score
-   - **Labeled** — you label example pairs (match/no-match), Ratchet builds a scorer from them
-   - **Live signal** — a metrics endpoint or DB query that returns a live score
-   - **LLM judge** — uses a model to evaluate outputs *(weakest anchor — scores may drift)*
-
-2. **Goal** — one sentence describing what you're optimizing for
-
-3. **Lever** — the file path Claude is allowed to modify (e.g., `prompts/classifier.md`)
-
-4. **Constraints** — rules Claude must follow (e.g., "Must remain under 2000 tokens")
-
-5. **Context files** — additional files Claude should read for background
-
-### Named Ratchets
-
-You can run multiple independent ratchets in the same project using `--name`:
-
-```bash
-ratchet init --name classifier
-ratchet init --name system-prompt
-ratchet init --name config
-
-ratchet start --name classifier
-ratchet watch --name system-prompt
-ratchet log --name config
-```
-
-Each named ratchet gets its own spec, scorer, watermark, and history. Omitting `--name` uses `default`.
-
-### Generated Files
-
-| Path | Purpose |
-|---|---|
-| `ratchet/<name>/RATCHET.md` | Optimization spec — goal, lever, constraints, context |
-| `ratchet/<name>/scorer.sh` | Shell script that outputs a single float (higher = better) |
-| `ratchet/<name>/watermark.txt` | Current high watermark score |
-| `ratchet/<name>/progress.log` | JSONL log of every iteration |
-| `ratchet/<name>/learnings.md` | Tactical learnings extracted from runs |
-| `ratchet/<name>/best/` | Latest best version of the lever |
-| `ratchet/<name>/snapshots/` | Snapshot of the lever at each kept iteration |
-
-### `RATCHET.md`
-
-The generated spec file looks like this:
-
-```markdown
-# Goal
-Improve prompt accuracy for product-recall matching
-
-# Lever
-The file at prompts/classifier.md is the only thing you may change.
-One targeted improvement per iteration. Do not rewrite wholesale.
-
-# Constraints
-- Must remain under 2000 tokens
-- Must not remove the routing section
-
-# Context
-- Read TOPOLOGY.md for codebase structure
-- The scorer measures how well the lever achieves the goal above
-```
-
-### `scorer.sh`
-
-Your scorer must output a **single float to stdout**. Higher is better. Example:
-
-```bash
-#!/bin/bash
-# Run tests and report pass rate
-TOTAL=$(bun test 2>&1 | grep -oP '\d+ pass' | grep -oP '\d+')
-FAILED=$(bun test 2>&1 | grep -oP '\d+ fail' | grep -oP '\d+')
-echo "scale=4; $TOTAL / ($TOTAL + $FAILED)" | bc
-```
-
-## Usage
-
-All commands accept `--name <name>` to target a specific ratchet. Defaults to `default`.
-
-### Start an Optimization Run
-
-```bash
-# Run 20 iterations with defaults
-ratchet start
-
-# Target a specific ratchet
-ratchet start --name classifier
-
-# Customize the run
-ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-haiku-4-5-20251001
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `--name <name>` | `default` | Which ratchet to run |
-| `-n, --iterations <n>` | `20` | Number of iterations to run |
-| `--min-delta <delta>` | `0.001` | Minimum score improvement to accept a change |
-| `--model <model>` | `claude-haiku-4-5-20251001` | Claude model to use |
-| `--fresh` | — | Start fresh, ignoring any saved state |
-| `--max-spend <dollars>` | — | Maximum USD to spend on API calls before stopping |
-
-Output looks like:
-
-```
-Starting ratchet loop (classifier) [run a1b2c3d4]
-  Lever: prompts/classifier.md
-  Model: claude-haiku-4-5-20251001
-  Iterations: 20
-  Min delta: 0.001
-  Max spend: $5.00
-  Current watermark: 0.72
-
-[1/20] Running agent... scoring... ✓ kept  score=0.7400 (+0.0200) — Added few-shot example for edge case
-[2/20] Running agent... scoring... ✗ disc  score=0.7350 (-0.0050) — Restructured output format
-[3/20] Running agent... scoring... ✓ kept  score=0.7650 (+0.0250) — Clarified matching criteria
-...
-
-Done. 8 kept, 12 discarded. Final watermark: 0.8420. Total spend: $0.3842
-```
-
-### Watch Live Progress
-
-```bash
-ratchet watch --name classifier
-```
-
-Displays a live staircase chart in the terminal showing score progression, watermark level, and accept/discard history. Refreshes every 2 seconds.
-
-### View Iteration History
-
-```bash
-ratchet log --name classifier
-```
-
-```
-   #  Status      Score     Delta  Timestamp                 Summary
-────────────────────────────────────────────────────────────────────────────
-   1  ✓ kept     0.7400   +0.0200  2026-03-10T12:00:00.000Z  Added few-shot example
-   2  ✗ disc     0.7350   -0.0050  2026-03-10T12:01:30.000Z  Restructured output format
-   3  ✓ kept     0.7650   +0.0250  2026-03-10T12:03:00.000Z  Clarified matching criteria
-
-3 iterations, 2 kept, 1 discarded
-```
-
-### Compare Iterations
-
-```bash
-# Diff the lever between two kept iterations
-ratchet diff 1 3 --name classifier
-```
-
-Shows a unified diff of the lever file between any two snapshots.
-
-### Inspect a Specific Iteration
-
-```bash
-ratchet show 3 --name classifier
-```
-
-### Restore a Previous State
-
-```bash
-# Roll the lever back to iteration 3's state
-ratchet checkout 3 --name classifier
-```
-
-### View Learnings
-
-After each run, Ratchet extracts tactical learnings from the progress log — what worked, what didn't, and why. These are fed back to the agent on subsequent runs.
-
-```bash
-ratchet learnings --name classifier
-```
-
-```markdown
-## What Works
-- **Few-shot examples outperform explicit rules** — iterations 1,3 tried verbose instructions
-  and scored lower; iteration 4 added a single worked example and jumped +0.0234
-
-## What Doesn't
-- **Explicit classification criteria degrade accuracy** — prescriptive rules overconstrain the model
-
-## Tactics
-- Use 2-3 worked examples covering diverse edge cases
-- Preserve JSON-only output constraint in all changes
-```
-
-Learnings are stored in `ratchet/<name>/learnings.md` and updated after each run.
-
-### Pause and Resume
-
-```bash
-# Pause a running optimization (checked between iterations)
-ratchet pause --name classifier
-
-# Resume where you left off
-ratchet resume --name classifier
-```
-
-## Example: Optimizing a Classifier Prompt
-
-```bash
-# 1. Set up your project
-mkdir my-project && cd my-project
-echo "Classify the product..." > prompts/classifier.md
-
-# 2. Write a scorer
-cat > scorer.sh << 'EOF'
-#!/bin/bash
-python3 eval.py prompts/classifier.md | tail -1
-EOF
-chmod +x scorer.sh
-
-# 3. Initialize ratchet
-export ANTHROPIC_API_KEY="sk-ant-..."
-ratchet init --name classifier
-# → Select "Objective" scorer type
-# → Goal: "Improve classification accuracy"
-# → Lever: prompts/classifier.md
-
-# 4. Run the optimization loop
-ratchet start --name classifier --iterations 30
-
-# 5. Watch it climb
-ratchet watch --name classifier
-```
-
-## Project Structure
-
-```
-your-project/
-├── prompts/
-│   └── classifier.md           # The lever (file being optimized)
-└── ratchet/
-    ├── classifier/
-    │   ├── RATCHET.md          # Optimization spec
-    │   ├── scorer.sh           # Scoring script
-    │   ├── watermark.txt       # Current high watermark
-    │   ├── progress.log        # JSONL iteration history
-    │   ├── learnings.md          # Tactical learnings from runs
-    │   ├── best/
-    │   │   └── classifier.md   # Best lever state so far
-    │   └── snapshots/
-    │       ├── 1/
-    │       ├── 3/
-    │       └── ...             # One per kept iteration
-    └── system-prompt/
-        ├── RATCHET.md
-        ├── scorer.sh
-        └── ...                 # Another independent ratchet
-```
-
-## Known Limitations & Planned Improvements
-
-1. ✅ **No tests yet.** The core loop (watermark comparison, rollback, RATCHET.md parsing, progress log) needs test coverage.
-2. ✅ **`ratchet resume` does not restart the loop.** It deletes the pause flag and instructs you to re-run `ratchet start`, which restarts from iteration 1. True resume (picking up at iteration N) is planned.
-3. ✅ **Labeled scorer does not evaluate the lever.** Removed from init — coming soon once evaluation logic is implemented properly.
-4. ✅ **LLM judge scorer has shell escaping issues.** Removed from init — coming soon with proper JSON encoding and portable shell commands.
-5. ✅ **`--schedule` flag is not implemented.** Removed from CLI until implemented.
-6. ✅ **Progress log has no run ID.** Each run now generates a unique run ID included in every progress log entry.
-7. ✅ **`--max-spend` parameter is not implemented.** Use `--max-spend <dollars>` to set a budget cap — the loop stops when cumulative API spend reaches the limit.
-
-## Future Directions
-
-Design ideas and potential improvements — not promises, just directions worth exploring.
-
-1. **Scorer diagnostics** — Before starting a run, optionally run the scorer N times on the current lever to measure signal variance. A noisy scorer wastes iterations; ratchet should warn you before you burn cycles against an unreliable signal. Something like `ratchet diagnose --name classifier --samples 10` that reports mean, stddev, and a go/no-go recommendation.
-
-2. **Composable scorers** — Most real optimization targets are multi-dimensional. A mechanism to define weighted combinations of sub-scorers (e.g. 0.6 × test pass rate + 0.3 × latency + 0.1 × cost) would make ratchet much more practical for production use cases where a single number doesn't capture the full picture.
-
-3. **Scorer templates** — Pre-built scorer templates for common patterns: test suite pass rate, LLM-as-judge (structured, with grading rubrics), latency benchmark, regex match rate, response length constraint. These would lower the floor for new users who know *what* they want to optimize but don't want to write shell scripts from scratch.
-
-4. **Labeled import** — The interactive labeling flow is a genuinely novel idea. Extending it to import from existing eval datasets (CSV, Braintrust, RAGAS, etc.) or hook into CI/CD quality gates would broaden the audience from "people who can write a scorer" to "anyone with an eval dataset."
-
-5. **Efficiency metrics** — Track cost-per-score-delta across iterations. Surface insights like "you spent $0.80 to gain 0.02 this run" to help users decide whether continued optimization is worth it. Pairs naturally with `--max-spend` once that's implemented.
-
-6. **Schedule support** — Nightly cron runs for continuous optimization against live signals: A/B test data, user feedback, production metrics. The `--schedule` flag already exists as a placeholder — filling it in would unlock a genuinely useful workflow where prompts improve overnight without human intervention.
 
 ## License
 
