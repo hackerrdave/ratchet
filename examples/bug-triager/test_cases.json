@@ -1,0 +1,42 @@
+[
+  {
+    "report": "Users are reporting they can't log in. Getting 500 errors on POST /auth/login. Started 10 minutes ago. Affects all users. CloudWatch shows the auth service is throwing 'connection refused' errors to the user database. No recent deploys.",
+    "expected": "{\"severity\":\"critical\",\"component\":\"auth\",\"summary\":\"Auth service cannot connect to user database, blocking all logins\",\"next_steps\":[\"Check database health and connection pool status\",\"Verify network connectivity between auth service and database\",\"Check if database hit connection limits\"]}"
+  },
+  {
+    "report": "The search bar autocomplete suggestions are showing results from deleted products. Low traffic feature. Customer reported it via support ticket. No error logs, just stale data appearing in the dropdown.",
+    "expected": "{\"severity\":\"low\",\"component\":\"search\",\"summary\":\"Search autocomplete index contains deleted products\",\"next_steps\":[\"Check if product deletion triggers search index cleanup\",\"Rebuild the autocomplete index\",\"Add index invalidation to product deletion flow\"]}"
+  },
+  {
+    "report": "Credit card charges are being processed twice for some orders. 15 customers affected in the last hour. Stripe dashboard confirms duplicate charges. Appears to correlate with timeout retries on the payment service. Money is being taken from customer accounts incorrectly.",
+    "expected": "{\"severity\":\"critical\",\"component\":\"payments\",\"summary\":\"Payment service retries causing duplicate charges on customer cards\",\"next_steps\":[\"Immediately add idempotency keys to payment requests\",\"Identify and refund all duplicate charges\",\"Disable automatic retries until fix is verified\"]}"
+  },
+  {
+    "report": "The CSV export button on the analytics dashboard times out when exporting more than 10,000 rows. Works fine under 10K. Users on enterprise plans frequently have datasets this large. Error: 'Gateway timeout after 30s'.",
+    "expected": "{\"severity\":\"medium\",\"component\":\"analytics\",\"summary\":\"CSV export times out for datasets over 10K rows\",\"next_steps\":[\"Move large exports to async background job with download link\",\"Add streaming/chunked response for large exports\",\"Increase gateway timeout as temporary workaround\"]}"
+  },
+  {
+    "report": "Mobile app crashes on launch for users who updated to iOS 18.2. Crash rate jumped from 0.1% to 12% overnight. Stack trace shows an EXC_BAD_ACCESS in the UIKit initialization code. Approximately 30% of our iOS users are on 18.2.",
+    "expected": "{\"severity\":\"critical\",\"component\":\"mobile-ios\",\"summary\":\"iOS 18.2 update causing 12% crash rate on app launch\",\"next_steps\":[\"Reproduce on iOS 18.2 simulator immediately\",\"Check Apple release notes for UIKit breaking changes\",\"Ship hotfix or enable feature flag to bypass affected code path\"]}"
+  },
+  {
+    "report": "Email notifications for new comments are arriving 4-6 hours late. Queue depth in SQS is growing steadily. Worker logs show successful processing but the consumer seems to be falling behind. Started after we added image attachment processing to the notification pipeline yesterday.",
+    "expected": "{\"severity\":\"high\",\"component\":\"notifications\",\"summary\":\"Email notification delays of 4-6 hours due to growing SQS queue backlog\",\"next_steps\":[\"Scale up notification worker instances\",\"Check if image processing is blocking the notification pipeline\",\"Consider separating image processing into its own queue\"]}"
+  },
+  {
+    "report": "The 'Forgot Password' link on the login page returns a 404 after our last deploy. The page worked fine on staging. Likely a routing configuration issue. Users who forget their password have no way to reset it through the app.",
+    "expected": "{\"severity\":\"high\",\"component\":\"auth\",\"summary\":\"Password reset page returns 404 after latest deploy\",\"next_steps\":[\"Check route configuration diff in last deploy\",\"Verify the password reset route exists in production config\",\"Rollback routing changes or hotfix the route\"]}"
+  },
+  {
+    "report": "Tooltip text on the settings page says 'Enble dark mode' — missing the 'a' in 'Enable'. Noticed by a user in our Discord. Purely cosmetic.",
+    "expected": "{\"severity\":\"low\",\"component\":\"ui\",\"summary\":\"Typo in settings page tooltip: 'Enble' should be 'Enable'\",\"next_steps\":[\"Fix typo in the tooltip text\",\"Include in next regular release\"]}"
+  },
+  {
+    "report": "Our API rate limiter is not working correctly. Users can exceed the 100 req/min limit without being throttled. Discovered during load testing. The Redis counter appears to not be incrementing. This means we have no protection against abuse or accidental DDoS from misbehaving clients.",
+    "expected": "{\"severity\":\"high\",\"component\":\"api-gateway\",\"summary\":\"Rate limiter not enforcing request limits due to broken Redis counter\",\"next_steps\":[\"Verify Redis connectivity and check if INCR commands are reaching Redis\",\"Check rate limiter middleware configuration and key format\",\"Deploy fix and verify with synthetic load test\"]}"
+  },
+  {
+    "report": "Users in the EU are seeing a GDPR consent banner that can't be dismissed. Clicking 'Accept' does nothing. The banner covers 30% of the screen. Console shows a JavaScript error: 'Cannot read properties of undefined (reading addEventListener)'. Affects all EU traffic — about 40% of our users.",
+    "expected": "{\"severity\":\"high\",\"component\":\"ui\",\"summary\":\"GDPR consent banner broken for EU users, covering 30% of screen\",\"next_steps\":[\"Fix the JavaScript error in the consent banner event handler\",\"Check if the consent management script loaded correctly\",\"Deploy hotfix — this blocks EU users from using the product\"]}"
+  }
+]

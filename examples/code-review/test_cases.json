@@ -1,0 +1,41 @@
+[
+  {
+    "diff": "+app.get('/users/:id', async (req, res) => {\n+  const user = await db.query(`SELECT * FROM users WHERE id = '${req.params.id}'`);\n+  res.json(user.rows[0]);\n+});",
+    "context": "Express.js API endpoint for fetching a user by ID",
+    "expected": "SQL injection vulnerability. The user ID is interpolated directly into the query string. Use parameterized queries: `db.query('SELECT * FROM users WHERE id = $1', [req.params.id])`. Also add a 404 check when `user.rows[0]` is undefined."
+  },
+  {
+    "diff": "+async function processOrders(orders: Order[]) {\n+  for (const order of orders) {\n+    await sendEmail(order.userEmail, order.receipt);\n+    await updateInventory(order.items);\n+    await chargePayment(order.paymentMethod, order.total);\n+  }\n+}",
+    "context": "Order processing pipeline that runs after checkout",
+    "expected": "Processing orders sequentially will be very slow at scale. More critically, if `chargePayment` fails after `sendEmail` succeeds, you've sent a receipt for an uncharged order. Consider: (1) reorder to charge payment first, (2) use Promise.allSettled for independent operations, (3) add error handling/rollback logic."
+  },
+  {
+    "diff": "+const API_KEY = 'sk-proj-abc123def456';\n+const DB_PASSWORD = 'prod-db-p@ssw0rd';\n+\n+export async function fetchData() {\n+  return fetch('https://api.example.com/data', {\n+    headers: { 'Authorization': `Bearer ${API_KEY}` }\n+  });\n+}",
+    "context": "Utility module for fetching data from external API",
+    "expected": "Hardcoded secrets (API key and database password) in source code. These will be committed to version control. Move to environment variables: `process.env.API_KEY`. Also, `DB_PASSWORD` is defined but unused — remove it or move it to where it's needed."
+  },
+  {
+    "diff": " function calculateDiscount(price: number, userType: string): number {\n-  return price * 0.9;\n+  if (userType === 'premium') {\n+    return price * 0.8;\n+  } else if (userType === 'gold') {\n+    return price * 0.85;\n+  } else if (userType === 'silver') {\n+    return price * 0.9;\n+  } else if (userType === 'bronze') {\n+    return price * 0.95;\n+  } else {\n+    return price;\n+  }\n }",
+    "expected": "The discount multipliers are magic numbers scattered across if/else branches. Use a lookup map instead: `const DISCOUNT: Record<string, number> = { premium: 0.8, gold: 0.85, ... }; return price * (DISCOUNT[userType] ?? 1);`. This is easier to maintain and makes it obvious when a new tier is added. Also consider using a union type instead of `string` for userType."
+  },
+  {
+    "diff": "+export function UserList({ users }: { users: User[] }) {\n+  const [search, setSearch] = useState('');\n+  const [sortBy, setSortBy] = useState('name');\n+  const [page, setPage] = useState(0);\n+\n+  const filtered = users\n+    .filter(u => u.name.toLowerCase().includes(search.toLowerCase()))\n+    .sort((a, b) => a[sortBy].localeCompare(b[sortBy]))\n+    .slice(page * 50, (page + 1) * 50);\n+\n+  return (\n+    <div>\n+      <input onChange={e => setSearch(e.target.value)} />\n+      {filtered.map(u => <UserCard key={u.id} user={u} />)}\n+    </div>\n+  );\n+}",
+    "context": "React component for displaying a searchable, sortable user list",
+    "expected": "The filter/sort/slice chain runs on every render. With a large `users` array this will cause jank. Wrap it in `useMemo` with `[users, search, sortBy, page]` as dependencies. Also, `page` should reset to 0 when `search` changes, otherwise users might see an empty page after filtering."
+  },
+  {
+    "diff": "+class CacheService {\n+  private cache: Map<string, any> = new Map();\n+\n+  set(key: string, value: any): void {\n+    this.cache.set(key, value);\n+  }\n+\n+  get(key: string): any {\n+    return this.cache.get(key);\n+  }\n+}",
+    "context": "In-memory cache service for a Node.js backend",
+    "expected": "This cache will grow without bound and eventually cause memory issues. Add TTL support and/or a max size with LRU eviction. Also, using `any` loses type safety — consider making it generic: `CacheService<T>` or `Map<string, { value: T, expiresAt: number }>`."
+  },
+  {
+    "diff": "+app.post('/webhook', async (req, res) => {\n+  const event = req.body;\n+  res.sendStatus(200);\n+  await processWebhookEvent(event);\n+});",
+    "context": "Stripe webhook handler in Express.js",
+    "expected": "Two issues: (1) No signature verification — you should validate the webhook using `stripe.webhooks.constructEvent(req.body, sig, secret)` to prevent spoofed events. (2) You're sending 200 before processing, which is good for avoiding timeouts, but if `processWebhookEvent` throws, you'll silently lose events. Add error handling with a dead letter queue or retry mechanism."
+  },
+  {
+    "diff": "+export async function migrate() {\n+  await db.query('DROP TABLE IF EXISTS users');\n+  await db.query('CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT, email TEXT)');\n+  await db.query('DROP TABLE IF EXISTS orders');\n+  await db.query('CREATE TABLE orders (id SERIAL PRIMARY KEY, user_id INT, total NUMERIC)');\n+}",
+    "context": "Database migration script",
+    "expected": "This migration drops tables unconditionally — running it in production would delete all data. Migrations should be additive and idempotent. Use `CREATE TABLE IF NOT EXISTS` for initial setup, and for schema changes use `ALTER TABLE`. Also wrap the operations in a transaction so a failure doesn't leave the database in a partial state."
+  }
+]

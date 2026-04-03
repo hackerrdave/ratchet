@@ -1,0 +1,52 @@
+[
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "How many orders did each user place last month?",
+    "expected": "SELECT u.id, u.name, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id AND o.created_at >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND o.created_at < date_trunc('month', CURRENT_DATE) GROUP BY u.id, u.name ORDER BY order_count DESC;"
+  },
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "What are the top 5 products by revenue?",
+    "expected": "SELECT p.id, p.name, SUM(p.price * oi.quantity) AS revenue FROM products p JOIN order_items oi ON oi.product_id = p.id GROUP BY p.id, p.name ORDER BY revenue DESC LIMIT 5;"
+  },
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "Find users who signed up but never placed an order",
+    "expected": "SELECT u.id, u.name, u.email FROM users u LEFT JOIN orders o ON o.user_id = u.id WHERE o.id IS NULL;"
+  },
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "What's the average order value by product category?",
+    "expected": "SELECT p.category, AVG(o.total) AS avg_order_value FROM products p JOIN order_items oi ON oi.product_id = p.id JOIN orders o ON o.id = oi.order_id GROUP BY p.category ORDER BY avg_order_value DESC;"
+  },
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "Show me users on the 'pro' plan who spent more than $500 total",
+    "expected": "SELECT u.id, u.name, u.email, SUM(o.total) AS total_spent FROM users u JOIN orders o ON o.user_id = u.id WHERE u.plan = 'pro' GROUP BY u.id, u.name, u.email HAVING SUM(o.total) > 500;"
+  },
+  {
+    "schema": "employees (id, name, department_id, salary NUMERIC, hire_date, manager_id INT)\ndepartments (id, name, budget NUMERIC)\nprojects (id, name, department_id, deadline DATE, status TEXT)\nproject_assignments (employee_id, project_id, role TEXT)",
+    "question": "Which departments are over budget based on total employee salaries?",
+    "expected": "SELECT d.id, d.name, d.budget, SUM(e.salary) AS total_salaries FROM departments d JOIN employees e ON e.department_id = d.id GROUP BY d.id, d.name, d.budget HAVING SUM(e.salary) > d.budget;"
+  },
+  {
+    "schema": "employees (id, name, department_id, salary NUMERIC, hire_date, manager_id INT)\ndepartments (id, name, budget NUMERIC)\nprojects (id, name, department_id, deadline DATE, status TEXT)\nproject_assignments (employee_id, project_id, role TEXT)",
+    "question": "Find employees who aren't assigned to any project",
+    "expected": "SELECT e.id, e.name, e.department_id FROM employees e LEFT JOIN project_assignments pa ON pa.employee_id = e.id WHERE pa.employee_id IS NULL;"
+  },
+  {
+    "schema": "employees (id, name, department_id, salary NUMERIC, hire_date, manager_id INT)\ndepartments (id, name, budget NUMERIC)\nprojects (id, name, department_id, deadline DATE, status TEXT)\nproject_assignments (employee_id, project_id, role TEXT)",
+    "question": "List each manager with the number of direct reports they have",
+    "expected": "SELECT m.id, m.name, COUNT(e.id) AS direct_reports FROM employees m JOIN employees e ON e.manager_id = m.id GROUP BY m.id, m.name ORDER BY direct_reports DESC;"
+  },
+  {
+    "schema": "employees (id, name, department_id, salary NUMERIC, hire_date, manager_id INT)\ndepartments (id, name, budget NUMERIC)\nprojects (id, name, department_id, deadline DATE, status TEXT)\nproject_assignments (employee_id, project_id, role TEXT)",
+    "question": "Show overdue projects with the count of assigned employees",
+    "expected": "SELECT p.id, p.name, p.deadline, COUNT(pa.employee_id) AS assigned_count FROM projects p LEFT JOIN project_assignments pa ON pa.project_id = p.id WHERE p.status != 'completed' AND p.deadline < CURRENT_DATE GROUP BY p.id, p.name, p.deadline ORDER BY p.deadline;"
+  },
+  {
+    "schema": "users (id, name, email, created_at, plan TEXT)\norders (id, user_id, total NUMERIC, status TEXT, created_at)\nproducts (id, name, price NUMERIC, category TEXT)\norder_items (id, order_id, product_id, quantity INT)",
+    "question": "What percentage of orders are in each status?",
+    "expected": "SELECT status, COUNT(*) AS count, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage FROM orders GROUP BY status ORDER BY count DESC;"
+  }
+]
