@@ -1,42 +1,36 @@
-import * as p from "@clack/prompts";
 import { join } from "path";
-import { cp, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import {
-  DEFAULT_NAME,
-  ratchetMdPath,
-  scorerShPath,
-  bestDir,
-  pauseFilePath,
+  RATCHET_MD,
+  OUTPUT_DIR,
+  BEST_DIR,
+  PAUSE_FILE,
   parseRatchetMd,
+  estimateCost,
 } from "../lib/config.ts";
-import { runScorer } from "../lib/scorer.ts";
+import { runJudge } from "../lib/judge.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
 import { appendProgress, snapshotLever, type ProgressEntry } from "../lib/progress.ts";
 import { runAgent } from "../lib/agent.ts";
 import { extractLearnings } from "../lib/learnings.ts";
+import { readState, writeState, clearState, generateRunId } from "../lib/state.ts";
+import { countTokens, getTokenStats } from "../lib/tokens.ts";
+import { c, header, status, iterResult, formatCost, timer } from "../lib/format.ts";
 
 interface StartOptions {
   iterations: string;
   minDelta: string;
-  schedule?: string;
   model: string;
-  name: string;
+  judgeModel?: string;
+  fresh?: boolean;
+  maxSpend?: string;
 }
 
 export async function startCommand(options: StartOptions) {
   const cwd = process.cwd();
-  const name = options.name;
 
-  // Validate prerequisites
-  const ratchetMd = join(cwd, ratchetMdPath(name));
-  if (!(await Bun.file(ratchetMd).exists())) {
-    console.error(`No ${ratchetMdPath(name)} found. Run \`ratchet init --name ${name}\` first.`);
-    process.exit(1);
-  }
-
-  const scorer = join(cwd, scorerShPath(name));
-  if (!(await Bun.file(scorer).exists())) {
-    console.error(`No ${scorerShPath(name)} found. Run \`ratchet init --name ${name}\` first.`);
+  if (!(await Bun.file(join(cwd, RATCHET_MD)).exists())) {
+    console.error(`No ${RATCHET_MD} found. Create one or run \`ratchet init\`.`);
     process.exit(1);
   }
 
@@ -45,165 +39,231 @@ export async function startCommand(options: StartOptions) {
     process.exit(1);
   }
 
+  const ratchetMdContent = await Bun.file(join(cwd, RATCHET_MD)).text();
+  let config;
+  try {
+    config = parseRatchetMd(ratchetMdContent);
+  } catch (err) {
+    console.error(`Invalid ${RATCHET_MD}: ${err}`);
+    console.error(`\nRATCHET.md must have # Goal, # Prompt, and # Eval sections.`);
+    console.error(`The # Eval section needs at minimum:`);
+    console.error(`  - Test cases: <path to JSON file>`);
+    console.error(`  - At least one scoring criterion`);
+    process.exit(1);
+  }
+
+  if (!(await Bun.file(join(cwd, config.eval.testCases)).exists())) {
+    console.error(`Test cases file not found: ${config.eval.testCases}`);
+    process.exit(1);
+  }
+
+  await mkdir(join(cwd, BEST_DIR), { recursive: true });
+  await mkdir(join(cwd, OUTPUT_DIR), { recursive: true });
+
   const iterations = parseInt(options.iterations, 10);
   const minDelta = parseFloat(options.minDelta);
   const model = options.model;
+  const judgeModel = options.judgeModel;
+  const maxSpend = options.maxSpend ? parseFloat(options.maxSpend) : undefined;
 
-  if (options.schedule) {
-    console.log(`Schedule mode not yet implemented. Run without --schedule for now.`);
-    // TODO: implement cron scheduling
-    return;
+  let startIteration = 1;
+  let runId: string;
+  let totalSpend = 0;
+  const existingState = await readState(cwd);
+  if (existingState && !options.fresh) {
+    startIteration = existingState.currentIteration;
+    runId = existingState.runId;
+    totalSpend = existingState.totalSpend || 0;
+    console.log(`\n  ${c.cyan}↻${c.reset} Resuming run ${c.bold}${runId}${c.reset} from iteration ${startIteration}/${iterations}`);
+  } else {
+    runId = generateRunId();
   }
 
-  const ratchetMdContent = await Bun.file(ratchetMd).text();
-  const config = parseRatchetMd(ratchetMdContent);
-
-  // Get or set initial watermark
-  let watermark = await readWatermark(cwd, name);
+  // Baseline
+  let watermark = await readWatermark(cwd);
   if (watermark === -Infinity) {
-    p.intro("No watermark found. Running baseline scorer...");
+    const s = status("Running baseline eval");
     try {
-      watermark = await runScorer(scorer, cwd);
-      await writeWatermark(cwd, watermark, name);
-      console.log(`Baseline score: ${watermark}`);
+      const baseline = await runJudge(cwd, { targetModel: model, judgeModel });
+      watermark = baseline.score;
+      await writeWatermark(cwd, watermark);
+      s.done(`${c.bold}${watermark.toFixed(4)}${c.reset} ${c.dim}(${baseline.cases.length} test cases)${c.reset}`);
     } catch (err) {
-      console.error(`Baseline scorer failed: ${err}`);
+      s.fail(`${err}`);
       process.exit(1);
     }
   }
 
-  const nameLabel = name !== DEFAULT_NAME ? ` (${name})` : "";
-  console.log(`\nStarting ratchet loop${nameLabel}`);
-  console.log(`  Lever: ${config.lever}`);
-  console.log(`  Model: ${model}`);
-  console.log(`  Iterations: ${iterations}`);
-  console.log(`  Min delta: ${minDelta}`);
-  console.log(`  Current watermark: ${watermark}`);
-  console.log();
+  // Show config
+  let tokenInfo = "";
+  try {
+    const promptContent = await Bun.file(join(cwd, config.prompt)).text();
+    const stats = getTokenStats(promptContent, model);
+    tokenInfo = `${stats.tokenCount} tokens (${formatCost(stats.estimatedCostPerCall)}/call)`;
+  } catch {}
+
+  const items: [string, string][] = [
+    ["Prompt", `${config.prompt}${tokenInfo ? `  ${c.dim}${tokenInfo}${c.reset}` : ""}`],
+    ["Test cases", config.eval.testCases],
+    ["Proposer", model],
+    ...(judgeModel ? [["Judge", judgeModel] as [string, string]] : []),
+    ["Iterations", `${iterations}`],
+    ["Min delta", `${minDelta}`],
+    ["Watermark", `${c.bold}${watermark.toFixed(4)}${c.reset}`],
+  ];
+  if (maxSpend !== undefined) items.push(["Max spend", formatCost(maxSpend)]);
+  header(`Ratchet ${c.dim}[${runId}]${c.reset}`, items);
 
   let kept = 0;
   let discarded = 0;
 
-  for (let i = 1; i <= iterations; i++) {
-    // Check for pause
-    if (await Bun.file(join(cwd, pauseFilePath(name))).exists()) {
-      console.log(`\nPaused at iteration ${i}. Run \`ratchet resume --name ${name}\` to continue.`);
+  for (let i = startIteration; i <= iterations; i++) {
+    const iterTimer = timer();
+
+    await writeState(cwd, {
+      currentIteration: i,
+      totalIterations: iterations,
+      model,
+      minDelta,
+      startedAt: existingState?.startedAt || new Date().toISOString(),
+      runId,
+      totalSpend,
+      maxSpend,
+    });
+
+    if (maxSpend !== undefined && totalSpend >= maxSpend) {
+      console.log(`\n  ${c.yellow}⚠${c.reset} Budget exhausted (${formatCost(totalSpend)} >= ${formatCost(maxSpend)})`);
+      break;
+    }
+
+    if (await Bun.file(join(cwd, PAUSE_FILE)).exists()) {
+      console.log(`\n  ${c.yellow}⏸${c.reset} Paused at iteration ${i}. Run \`ratchet resume\` to continue.`);
       return;
     }
 
-    const iterLabel = `[${i}/${iterations}]`;
-    process.stdout.write(`${iterLabel} Running agent... `);
-
-    // Save current lever state (for rollback)
-    const leverPath = join(cwd, config.lever);
+    const promptPath = join(cwd, config.prompt);
     let originalContent: string;
     try {
-      originalContent = await Bun.file(leverPath).text();
+      originalContent = await Bun.file(promptPath).text();
     } catch {
-      console.error(`\nCannot read lever file: ${config.lever}`);
+      console.error(`\nCannot read prompt file: ${config.prompt}`);
       process.exit(1);
     }
 
+    // Propose
+    const proposeStatus = status(`[${i}/${iterations}] Proposing`);
     let agentResult;
     try {
-      agentResult = await runAgent(cwd, model, name);
+      agentResult = await runAgent(cwd, model);
+      proposeStatus.done("");
     } catch (err) {
-      console.log(`agent error: ${err}`);
+      proposeStatus.fail(`${err}`);
       const entry: ProgressEntry = {
-        iteration: i,
-        timestamp: new Date().toISOString(),
-        score: watermark,
-        prevScore: watermark,
-        delta: 0,
-        status: "discarded",
-        summary: `Agent error: ${err}`,
+        iteration: i, runId, model, judgeModel, timestamp: new Date().toISOString(),
+        score: watermark, prevScore: watermark, delta: 0,
+        status: "discarded", summary: `Proposer error: ${err}`,
       };
-      await appendProgress(cwd, entry, name);
+      await appendProgress(cwd, entry);
       discarded++;
       continue;
     }
 
     // Write proposed change
-    await Bun.write(leverPath, agentResult.newContent);
-    process.stdout.write("scoring... ");
+    await Bun.write(promptPath, agentResult.newContent);
 
-    // Score
-    let score: number;
+    // Judge
+    const judgeStatus = status(`[${i}/${iterations}] Judging (${config.eval.testCases})`);
+    let judgeResult;
     try {
-      score = await runScorer(scorer, cwd);
+      judgeResult = await runJudge(cwd, { targetModel: model, judgeModel });
+      judgeStatus.done("");
     } catch (err) {
-      console.log(`scorer error: ${err}`);
-      // Rollback
-      await Bun.write(leverPath, originalContent);
+      judgeStatus.fail(`${err}`);
+      await Bun.write(promptPath, originalContent);
+      const iterCost = estimateCost(model, agentResult.inputTokens, agentResult.outputTokens);
+      totalSpend += iterCost;
       const entry: ProgressEntry = {
-        iteration: i,
-        timestamp: new Date().toISOString(),
-        score: watermark,
-        prevScore: watermark,
-        delta: 0,
-        status: "discarded",
-        summary: `Scorer error: ${err}`,
+        iteration: i, runId, model, judgeModel, timestamp: new Date().toISOString(),
+        score: watermark, prevScore: watermark, delta: 0,
+        status: "discarded", summary: `Judge error: ${err}`,
+        inputTokens: agentResult.inputTokens, outputTokens: agentResult.outputTokens,
+        cost: iterCost, leverTokens: countTokens(agentResult.newContent, model),
+        phase: "quality",
       };
-      await appendProgress(cwd, entry, name);
+      await appendProgress(cwd, entry);
       discarded++;
       continue;
     }
 
+    const score = judgeResult.score;
     const delta = score - watermark;
+    const proposerCost = estimateCost(model, agentResult.inputTokens, agentResult.outputTokens);
+    const judgeCost = estimateCost(judgeModel || model, judgeResult.inputTokens, judgeResult.outputTokens);
+    const iterCost = proposerCost + judgeCost;
+    totalSpend += iterCost;
+    const promptTokens = countTokens(agentResult.newContent, model);
 
     if (delta >= minDelta) {
-      // Accept
       watermark = score;
-      await writeWatermark(cwd, watermark, name);
+      await writeWatermark(cwd, watermark);
+      await snapshotLever(cwd, config.prompt, i);
 
-      // Snapshot
-      await snapshotLever(cwd, config.lever, i, name);
-
-      // Update best
-      const bestFileName = config.lever.split("/").pop() || "lever";
-      await Bun.write(join(cwd, bestDir(name), bestFileName), agentResult.newContent);
+      const bestFileName = config.prompt.split("/").pop() || "prompt";
+      await Bun.write(join(cwd, BEST_DIR, bestFileName), agentResult.newContent);
 
       const entry: ProgressEntry = {
-        iteration: i,
-        timestamp: new Date().toISOString(),
-        score,
-        prevScore: score - delta,
-        delta,
-        status: "kept",
+        iteration: i, runId, model, judgeModel, timestamp: new Date().toISOString(),
+        score, prevScore: score - delta, delta, status: "kept",
         summary: agentResult.summary,
+        inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
+        outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
+        cost: iterCost, leverTokens: promptTokens, phase: "quality",
       };
-      await appendProgress(cwd, entry, name);
+      await appendProgress(cwd, entry);
 
-      console.log(`✓ kept  score=${score.toFixed(4)} (+${delta.toFixed(4)}) — ${agentResult.summary}`);
+      iterResult({
+        iteration: i, total: iterations, status: "kept",
+        score, delta, tokens: promptTokens, cost: iterCost,
+        summary: agentResult.summary, elapsed: iterTimer.format(),
+      });
       kept++;
     } else {
-      // Reject — rollback
-      await Bun.write(leverPath, originalContent);
+      await Bun.write(promptPath, originalContent);
 
       const entry: ProgressEntry = {
-        iteration: i,
-        timestamp: new Date().toISOString(),
-        score,
-        prevScore: watermark,
-        delta,
-        status: "discarded",
+        iteration: i, runId, model, judgeModel, timestamp: new Date().toISOString(),
+        score, prevScore: watermark, delta, status: "discarded",
         summary: agentResult.summary,
+        inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
+        outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
+        cost: iterCost, leverTokens: promptTokens, phase: "quality",
       };
-      await appendProgress(cwd, entry, name);
+      await appendProgress(cwd, entry);
 
-      console.log(`✗ disc  score=${score.toFixed(4)} (${delta >= 0 ? "+" : ""}${delta.toFixed(4)}) — ${agentResult.summary}`);
+      iterResult({
+        iteration: i, total: iterations, status: "discarded",
+        score, delta, tokens: promptTokens, cost: iterCost,
+        summary: agentResult.summary, elapsed: iterTimer.format(),
+      });
       discarded++;
     }
   }
 
-  console.log(`\nDone. ${kept} kept, ${discarded} discarded. Final watermark: ${watermark}`);
+  await clearState(cwd);
 
-  // Extract learnings from this run
-  process.stdout.write("Extracting learnings... ");
+  // Summary
+  header("Done", [
+    ["Kept", `${c.green}${kept}${c.reset}`],
+    ["Discarded", `${c.yellow}${discarded}${c.reset}`],
+    ["Watermark", `${c.bold}${watermark.toFixed(4)}${c.reset}`],
+    ["Total spend", formatCost(totalSpend)],
+  ]);
+
+  const learnStatus = status("Extracting learnings");
   try {
-    await extractLearnings(cwd, model, name);
-    console.log("done.");
+    await extractLearnings(cwd, model);
+    learnStatus.done("");
   } catch (err) {
-    console.log(`skipped (${err})`);
+    learnStatus.fail(`${err}`);
   }
 }

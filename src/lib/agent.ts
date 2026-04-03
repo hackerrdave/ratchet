@@ -1,15 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { parseRatchetMd, ratchetMdPath, progressLogPath, learningsPath, DEFAULT_NAME } from "./config.ts";
+import { parseRatchetMd, RATCHET_MD, PROGRESS_LOG, LEARNINGS_FILE } from "./config.ts";
+import { countTokens } from "./tokens.ts";
 import { join } from "path";
 
 const MAX_TOKENS = 4096;
 
-interface AgentResult {
+export interface AgentResult {
   newContent: string;
   summary: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
-export async function runAgent(cwd: string, model: string, name: string = DEFAULT_NAME): Promise<AgentResult> {
+export async function runAgent(cwd: string, model: string): Promise<AgentResult> {
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY environment variable is required");
@@ -17,18 +20,17 @@ export async function runAgent(cwd: string, model: string, name: string = DEFAUL
 
   const client = new Anthropic({ apiKey });
 
-  // Read RATCHET.md
-  const ratchetMd = await Bun.file(join(cwd, ratchetMdPath(name))).text();
+  const ratchetMd = await Bun.file(join(cwd, RATCHET_MD)).text();
   const config = parseRatchetMd(ratchetMd);
 
-  // Read current lever state
-  const leverPath = join(cwd, config.lever);
-  const leverContent = await Bun.file(leverPath).text();
+  // Read current prompt state
+  const promptPath = join(cwd, config.prompt);
+  const promptContent = await Bun.file(promptPath).text();
 
   // Read progress log
   let progressLog = "";
   try {
-    progressLog = await Bun.file(join(cwd, progressLogPath(name))).text();
+    progressLog = await Bun.file(join(cwd, PROGRESS_LOG)).text();
   } catch {
     progressLog = "(no iterations yet)";
   }
@@ -36,7 +38,7 @@ export async function runAgent(cwd: string, model: string, name: string = DEFAUL
   // Read learnings from previous runs
   let learnings = "";
   try {
-    learnings = await Bun.file(join(cwd, learningsPath(name))).text();
+    learnings = await Bun.file(join(cwd, LEARNINGS_FILE)).text();
   } catch {
     learnings = "";
   }
@@ -45,20 +47,17 @@ export async function runAgent(cwd: string, model: string, name: string = DEFAUL
   const contextSections: string[] = [];
   if (config.context) {
     for (const ctx of config.context) {
-      // Extract file path from context line like "Read TOPOLOGY.md for codebase structure"
       const pathMatch = ctx.match(/(?:Read\s+)?(\S+\.\w+)/i);
       if (pathMatch) {
         try {
           const content = await Bun.file(join(cwd, pathMatch[1]!)).text();
           contextSections.push(`--- ${pathMatch[1]} ---\n${content}`);
-        } catch {
-          // File doesn't exist, skip
-        }
+        } catch {}
       }
     }
   }
 
-  const systemPrompt = `You are an optimization agent. Your job is to make exactly ONE targeted improvement to the lever file.
+  const systemPrompt = `You are an optimization agent. Your job is to make exactly ONE targeted improvement to the prompt file.
 
 RULES:
 - Make exactly ONE change. Do not rewrite the entire file.
@@ -67,21 +66,21 @@ RULES:
 - Apply the tactical learnings from previous runs if available.
 - Your response MUST contain exactly two sections:
   1. <summary> — A one-line description of what you changed and why
-  2. <lever> — The complete new content of the lever file
+  2. <prompt> — The complete new content of the prompt file
 
 Format your response exactly like this:
 <summary>
 Your one-line summary here
 </summary>
-<lever>
-The complete new content of the lever file
-</lever>`;
+<prompt>
+The complete new content of the prompt file
+</prompt>`;
 
   const userPrompt = `# Optimization Spec
 ${ratchetMd}
 
-# Current Lever State (${config.lever})
-${leverContent}
+# Current Prompt (${config.prompt})
+${promptContent}
 
 # Progress Log
 ${progressLog}
@@ -89,7 +88,7 @@ ${progressLog}
 ${contextSections.length > 0 ? "# Context Files\n" + contextSections.join("\n\n") : ""}
 
 ${learnings ? `# Learnings from Previous Runs\n${learnings}\n` : ""}
-Make exactly one targeted improvement to the lever. Consider what has already been tried and avoid repeating failed approaches.`;
+Make exactly one targeted improvement to the prompt. Consider what has already been tried and avoid repeating failed approaches.`;
 
   const response = await client.messages.create({
     model,
@@ -103,16 +102,134 @@ Make exactly one targeted improvement to the lever. Consider what has already be
     .map((block) => block.text)
     .join("");
 
-  // Parse response
   const summaryMatch = text.match(/<summary>\s*([\s\S]*?)\s*<\/summary>/);
-  const leverMatch = text.match(/<lever>\s*([\s\S]*?)\s*<\/lever>/);
+  const promptMatch = text.match(/<prompt>\s*([\s\S]*?)\s*<\/prompt>/);
 
-  if (!leverMatch) {
-    throw new Error("Agent response did not contain a <lever> block");
+  if (!promptMatch) {
+    throw new Error("Agent response did not contain a <prompt> block");
   }
 
   return {
-    newContent: leverMatch[1]!,
+    newContent: promptMatch[1]!,
     summary: summaryMatch ? summaryMatch[1]!.trim() : "No summary provided",
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
+}
+
+export interface CompressAgentOptions {
+  qualityBar: number;
+  qualityMargin: number;
+  currentTokens: number;
+}
+
+export async function runCompressAgent(
+  cwd: string,
+  model: string,
+  compressOpts: CompressAgentOptions,
+): Promise<AgentResult> {
+  const apiKey = process.env["ANTHROPIC_API_KEY"];
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY environment variable is required");
+  }
+
+  const client = new Anthropic({ apiKey });
+
+  const ratchetMd = await Bun.file(join(cwd, RATCHET_MD)).text();
+  const config = parseRatchetMd(ratchetMd);
+  const promptPath = join(cwd, config.prompt);
+  const promptContent = await Bun.file(promptPath).text();
+
+  let progressLog = "";
+  try {
+    progressLog = await Bun.file(join(cwd, PROGRESS_LOG)).text();
+  } catch {
+    progressLog = "(no iterations yet)";
+  }
+
+  let learnings = "";
+  try {
+    learnings = await Bun.file(join(cwd, LEARNINGS_FILE)).text();
+  } catch {
+    learnings = "";
+  }
+
+  const contextSections: string[] = [];
+  if (config.context) {
+    for (const ctx of config.context) {
+      const pathMatch = ctx.match(/(?:Read\s+)?(\S+\.\w+)/i);
+      if (pathMatch) {
+        try {
+          const content = await Bun.file(join(cwd, pathMatch[1]!)).text();
+          contextSections.push(`--- ${pathMatch[1]} ---\n${content}`);
+        } catch {}
+      }
+    }
+  }
+
+  const systemPrompt = `You are a token-efficiency optimization agent. Your job is to make the prompt file MORE CONCISE while preserving its quality/effectiveness.
+
+CURRENT STATUS:
+- Current token count: ${compressOpts.currentTokens} tokens
+- Quality bar: ${compressOpts.qualityBar.toFixed(4)}
+- Acceptable quality range: ${(compressOpts.qualityBar - compressOpts.qualityMargin).toFixed(4)} to ${compressOpts.qualityBar.toFixed(4)}+
+- Quality margin: ${compressOpts.qualityMargin.toFixed(4)} (quality can drop by this much if tokens decrease substantially)
+
+RULES:
+- Make exactly ONE compression/efficiency change.
+- Focus on reducing token count while preserving meaning and quality.
+- Techniques: remove redundancy, tighten wording, merge overlapping instructions, eliminate filler, use terser phrasing, consolidate examples.
+- Do NOT remove critical information — compress it.
+- A small quality dip (within the margin) is acceptable if token savings are substantial (>10%).
+- Your response MUST contain exactly two sections:
+  1. <summary> — A one-line description of what you compressed and estimated token savings
+  2. <prompt> — The complete new content of the prompt file
+
+Format your response exactly like this:
+<summary>
+Your one-line summary here
+</summary>
+<prompt>
+The complete new content of the prompt file
+</prompt>`;
+
+  const userPrompt = `# Optimization Spec
+${ratchetMd}
+
+# Current Prompt (${config.prompt}) — ${compressOpts.currentTokens} tokens
+${promptContent}
+
+# Progress Log (efficiency phase)
+${progressLog}
+
+${contextSections.length > 0 ? "# Context Files\n" + contextSections.join("\n\n") : ""}
+
+${learnings ? `# Learnings from Previous Runs\n${learnings}\n` : ""}
+Compress the prompt to use fewer tokens while keeping quality above ${(compressOpts.qualityBar - compressOpts.qualityMargin).toFixed(4)}. Current token count: ${compressOpts.currentTokens}. Aim for at least 10% token reduction.`;
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: MAX_TOKENS,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const text = response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+
+  const summaryMatch = text.match(/<summary>\s*([\s\S]*?)\s*<\/summary>/);
+  const promptMatch = text.match(/<prompt>\s*([\s\S]*?)\s*<\/prompt>/);
+
+  if (!promptMatch) {
+    throw new Error("Agent response did not contain a <prompt> block");
+  }
+
+  return {
+    newContent: promptMatch[1]!,
+    summary: summaryMatch ? summaryMatch[1]!.trim() : "No summary provided",
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
   };
 }

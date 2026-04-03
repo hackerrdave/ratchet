@@ -1,12 +1,11 @@
 import { join } from "path";
-import { snapshotsDir, DEFAULT_NAME } from "../lib/config.ts";
+import { SNAPSHOTS_DIR } from "../lib/config.ts";
 import { $ } from "bun";
 
-export async function diffCommand(from: string, to: string, options: { name: string }) {
+export async function diffCommand(from: string, to: string) {
   const cwd = process.cwd();
-  const name = options.name;
-  const fromDir = join(cwd, snapshotsDir(name), from);
-  const toDir = join(cwd, snapshotsDir(name), to);
+  const fromDir = join(cwd, SNAPSHOTS_DIR, from);
+  const toDir = join(cwd, SNAPSHOTS_DIR, to);
 
   try {
     await $`ls ${fromDir}`.quiet();

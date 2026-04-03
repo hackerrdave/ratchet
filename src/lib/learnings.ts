@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { learningsPath, progressLogPath, ratchetMdPath, DEFAULT_NAME } from "./config.ts";
+import { LEARNINGS_FILE, PROGRESS_LOG, RATCHET_MD } from "./config.ts";
 import { join } from "path";
 
-export async function readLearnings(cwd: string, name: string = DEFAULT_NAME): Promise<string> {
-  const path = join(cwd, learningsPath(name));
+export async function readLearnings(cwd: string): Promise<string> {
+  const path = join(cwd, LEARNINGS_FILE);
   try {
     return await Bun.file(path).text();
   } catch {
@@ -14,31 +14,27 @@ export async function readLearnings(cwd: string, name: string = DEFAULT_NAME): P
 export async function extractLearnings(
   cwd: string,
   model: string,
-  name: string = DEFAULT_NAME
 ): Promise<string> {
   const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) return "";
 
   const client = new Anthropic({ apiKey });
 
-  // Read progress log
   let progressLog = "";
   try {
-    progressLog = await Bun.file(join(cwd, progressLogPath(name))).text();
+    progressLog = await Bun.file(join(cwd, PROGRESS_LOG)).text();
   } catch {
     return "";
   }
 
   if (!progressLog.trim()) return "";
 
-  // Read RATCHET.md for context
   let ratchetMd = "";
   try {
-    ratchetMd = await Bun.file(join(cwd, ratchetMdPath(name))).text();
+    ratchetMd = await Bun.file(join(cwd, RATCHET_MD)).text();
   } catch {}
 
-  // Read existing learnings
-  const existingLearnings = await readLearnings(cwd, name);
+  const existingLearnings = await readLearnings(cwd);
 
   const response = await client.messages.create({
     model,
@@ -73,8 +69,7 @@ Extract the tactical learnings from this optimization run.`,
     .map((block) => block.text)
     .join("");
 
-  // Write learnings
-  const path = join(cwd, learningsPath(name));
+  const path = join(cwd, LEARNINGS_FILE);
   await Bun.write(path, text);
 
   return text;

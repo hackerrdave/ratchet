@@ -1,0 +1,50 @@
+[
+  {
+    "diff": "diff --git a/src/auth.ts b/src/auth.ts\nindex 3a1b2c3..4d5e6f7 100644\n--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -42,7 +42,7 @@ export async function verifyToken(token: string) {\n   const decoded = jwt.verify(token, SECRET);\n-  if (decoded.exp > Date.now()) {\n+  if (decoded.exp * 1000 > Date.now()) {\n     return decoded;\n   }\n   throw new Error('Token expired');",
+    "expected": "fix: correct token expiry check by converting seconds to milliseconds"
+  },
+  {
+    "diff": "diff --git a/src/api/users.ts b/src/api/users.ts\nindex 1a2b3c4..5d6e7f8 100644\n--- a/src/api/users.ts\n+++ b/src/api/users.ts\n@@ -1,4 +1,5 @@\n import { Router } from 'express';\n+import { rateLimit } from '../middleware/rateLimit';\n \n const router = Router();\n \n@@ -10,6 +11,7 @@ router.get('/users', async (req, res) => {\n });\n \n+router.use('/users', rateLimit({ windowMs: 60000, max: 100 }));\n router.post('/users', async (req, res) => {",
+    "expected": "feat: add rate limiting to users API endpoint"
+  },
+  {
+    "diff": "diff --git a/src/utils/format.ts b/src/utils/format.ts\nindex 9a8b7c6..1d2e3f4 100644\n--- a/src/utils/format.ts\n+++ b/src/utils/format.ts\n@@ -1,15 +1,8 @@\n-export function formatPrice(price: number): string {\n-  let result = '';\n-  if (price < 0) {\n-    result += '-';\n-    price = Math.abs(price);\n-  }\n-  const dollars = Math.floor(price);\n-  const cents = Math.round((price - dollars) * 100);\n-  result += '$' + dollars + '.' + (cents < 10 ? '0' : '') + cents;\n-  return result;\n-}\n+export const formatPrice = (price: number): string =>\n+  new Intl.NumberFormat('en-US', {\n+    style: 'currency',\n+    currency: 'USD',\n+  }).format(price);",
+    "expected": "refactor: replace manual price formatting with Intl.NumberFormat"
+  },
+  {
+    "diff": "diff --git a/package.json b/package.json\nindex 2b3c4d5..6e7f8a9 100644\n--- a/package.json\n+++ b/package.json\n@@ -12,7 +12,7 @@\n   \"dependencies\": {\n-    \"express\": \"^4.18.2\",\n+    \"express\": \"^4.21.0\",\n     \"pg\": \"^8.11.0\",\n   },\n   \"devDependencies\": {\n-    \"typescript\": \"^5.2.0\"\n+    \"typescript\": \"^5.6.0\"\n   }",
+    "expected": "chore: bump express to 4.21.0 and typescript to 5.6.0"
+  },
+  {
+    "diff": "diff --git a/README.md b/README.md\nindex 4c5d6e7..8f9a0b1 100644\n--- a/README.md\n+++ b/README.md\n@@ -15,6 +15,22 @@ npm install\n npm run dev\n ```\n \n+## Environment Variables\n+\n+| Variable | Description | Required |\n+|----------|-------------|----------|\n+| `DATABASE_URL` | PostgreSQL connection string | Yes |\n+| `JWT_SECRET` | Secret key for JWT tokens | Yes |\n+| `PORT` | Server port (default: 3000) | No |\n+| `LOG_LEVEL` | Logging level (default: info) | No |\n+\n+## API Endpoints\n+\n+- `GET /api/users` — List all users\n+- `POST /api/users` — Create a new user\n+- `GET /api/users/:id` — Get user by ID\n+- `DELETE /api/users/:id` — Delete user\n+\n ## License",
+    "expected": "docs: add environment variables and API endpoints to README"
+  },
+  {
+    "diff": "diff --git a/tests/auth.test.ts b/tests/auth.test.ts\nnew file mode 100644\nindex 0000000..a1b2c3d\n--- /dev/null\n+++ b/tests/auth.test.ts\n@@ -0,0 +1,34 @@\n+import { describe, test, expect } from 'bun:test';\n+import { verifyToken, generateToken } from '../src/auth';\n+\n+describe('auth', () => {\n+  test('generates valid JWT token', () => {\n+    const token = generateToken({ userId: '123' });\n+    expect(token).toBeTruthy();\n+    expect(typeof token).toBe('string');\n+  });\n+\n+  test('verifies valid token', async () => {\n+    const token = generateToken({ userId: '123' });\n+    const decoded = await verifyToken(token);\n+    expect(decoded.userId).toBe('123');\n+  });\n+\n+  test('rejects expired token', async () => {\n+    const token = generateToken({ userId: '123' }, { expiresIn: -1 });\n+    expect(verifyToken(token)).rejects.toThrow('Token expired');\n+  });\n+});",
+    "expected": "test: add unit tests for JWT token generation and verification"
+  },
+  {
+    "diff": "diff --git a/src/db/queries.ts b/src/db/queries.ts\nindex 7f8a9b0..2c3d4e5 100644\n--- a/src/db/queries.ts\n+++ b/src/db/queries.ts\n@@ -5,9 +5,10 @@ export async function getUsers(filters: UserFilters) {\n-  const users = await db.query('SELECT * FROM users');\n-  return users.filter(u => {\n-    if (filters.role && u.role !== filters.role) return false;\n-    if (filters.active !== undefined && u.active !== filters.active) return false;\n-    return true;\n-  });\n+  const conditions: string[] = [];\n+  const params: unknown[] = [];\n+  if (filters.role) { conditions.push(`role = $${params.push(filters.role)}`); }\n+  if (filters.active !== undefined) { conditions.push(`active = $${params.push(filters.active)}`); }\n+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';\n+  return db.query(`SELECT * FROM users ${where}`, params);",
+    "expected": "perf: move user filtering from application layer to SQL query"
+  },
+  {
+    "diff": "diff --git a/src/config.ts b/src/config.ts\nindex 6d7e8f9..0a1b2c3 100644\n--- a/src/config.ts\n+++ b/src/config.ts\n@@ -1,8 +1,8 @@\n export const config = {\n   port: parseInt(process.env.PORT || '3000'),\n-  dbUrl: process.env.DATABASE_URL || 'postgres://localhost:5432/myapp',\n-  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',\n+  dbUrl: process.env.DATABASE_URL ?? throwEnvError('DATABASE_URL'),\n+  jwtSecret: process.env.JWT_SECRET ?? throwEnvError('JWT_SECRET'),\n   logLevel: process.env.LOG_LEVEL || 'info',\n };\n+\n+function throwEnvError(name: string): never {\n+  throw new Error(`Missing required environment variable: ${name}`);\n+}",
+    "expected": "fix: require DATABASE_URL and JWT_SECRET env vars instead of using insecure defaults"
+  },
+  {
+    "diff": "diff --git a/src/middleware/cors.ts b/src/middleware/cors.ts\ndeleted file mode 100644\nindex 3b4c5d6..0000000\n--- a/src/middleware/cors.ts\n+++ /dev/null\n@@ -1,18 +0,0 @@\n-// Custom CORS middleware - replaced by the cors package\n-export function corsMiddleware(req, res, next) {\n-  res.header('Access-Control-Allow-Origin', '*');\n-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE');\n-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');\n-  if (req.method === 'OPTIONS') {\n-    return res.sendStatus(200);\n-  }\n-  next();\n-}\ndiff --git a/src/app.ts b/src/app.ts\nindex 8e9f0a1..2b3c4d5 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,7 +1,7 @@\n import express from 'express';\n-import { corsMiddleware } from './middleware/cors';\n+import cors from 'cors';\n \n const app = express();\n-app.use(corsMiddleware);\n+app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') }));",
+    "expected": "refactor: replace custom CORS middleware with cors package"
+  },
+  {
+    "diff": "diff --git a/src/api/users.ts b/src/api/users.ts\nindex 5d6e7f8..9a0b1c2 100644\n--- a/src/api/users.ts\n+++ b/src/api/users.ts\n@@ -15,6 +15,11 @@ router.post('/users', async (req, res) => {\n   const { email, name, role } = req.body;\n+\n+  if (!email || !email.includes('@')) {\n+    return res.status(400).json({ error: 'Valid email is required' });\n+  }\n+\n   const user = await db.createUser({ email, name, role });\n   res.status(201).json(user);\n });",
+    "expected": "feat: add email validation to user creation endpoint"
+  },
+  {
+    "diff": "diff --git a/src/logger.ts b/src/logger.ts\nindex 1c2d3e4..5f6a7b8 100644\n--- a/src/logger.ts\n+++ b/src/logger.ts\n@@ -1,9 +1,4 @@\n-import winston from 'winston';\n-\n-export const logger = winston.createLogger({\n-  level: process.env.LOG_LEVEL || 'info',\n-  format: winston.format.json(),\n-  transports: [new winston.transports.Console()],\n-});\n+export const logger = {\n+  info: (...args: unknown[]) => console.log(new Date().toISOString(), '[INFO]', ...args),\n+  warn: (...args: unknown[]) => console.warn(new Date().toISOString(), '[WARN]', ...args),\n+  error: (...args: unknown[]) => console.error(new Date().toISOString(), '[ERROR]', ...args),\n+};",
+    "expected": "refactor: replace winston with lightweight console logger"
+  },
+  {
+    "diff": "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex 4e5f6a7..8b9c0d1 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -12,6 +12,9 @@ jobs:\n     steps:\n       - uses: actions/checkout@v4\n       - uses: oven-sh/setup-bun@v1\n+        with:\n+          bun-version: latest\n       - run: bun install\n       - run: bun test\n+      - run: bun run typecheck",
+    "expected": "ci: pin bun version and add typecheck step to CI pipeline"
+  }
+]

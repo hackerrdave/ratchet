@@ -165,16 +165,18 @@ ratchet start --name classifier --iterations 50 --min-delta 0.01 --model claude-
 | `-n, --iterations <n>` | `20` | Number of iterations to run |
 | `--min-delta <delta>` | `0.001` | Minimum score improvement to accept a change |
 | `--model <model>` | `claude-haiku-4-5-20251001` | Claude model to use |
-| `--schedule <cron>` | — | Cron schedule for recurring runs (coming soon) |
+| `--fresh` | — | Start fresh, ignoring any saved state |
+| `--max-spend <dollars>` | — | Maximum USD to spend on API calls before stopping |
 
 Output looks like:
 
 ```
-Starting ratchet loop (classifier)
+Starting ratchet loop (classifier) [run a1b2c3d4]
   Lever: prompts/classifier.md
   Model: claude-haiku-4-5-20251001
   Iterations: 20
   Min delta: 0.001
+  Max spend: $5.00
   Current watermark: 0.72
 
 [1/20] Running agent... scoring... ✓ kept  score=0.7400 (+0.0200) — Added few-shot example for edge case
@@ -182,7 +184,7 @@ Starting ratchet loop (classifier)
 [3/20] Running agent... scoring... ✓ kept  score=0.7650 (+0.0250) — Clarified matching criteria
 ...
 
-Done. 8 kept, 12 discarded. Final watermark: 0.8420
+Done. 8 kept, 12 discarded. Final watermark: 0.8420. Total spend: $0.3842
 ```
 
 ### Watch Live Progress
@@ -316,6 +318,32 @@ your-project/
         ├── scorer.sh
         └── ...                 # Another independent ratchet
 ```
+
+## Known Limitations & Planned Improvements
+
+1. ✅ **No tests yet.** The core loop (watermark comparison, rollback, RATCHET.md parsing, progress log) needs test coverage.
+2. ✅ **`ratchet resume` does not restart the loop.** It deletes the pause flag and instructs you to re-run `ratchet start`, which restarts from iteration 1. True resume (picking up at iteration N) is planned.
+3. ✅ **Labeled scorer does not evaluate the lever.** Removed from init — coming soon once evaluation logic is implemented properly.
+4. ✅ **LLM judge scorer has shell escaping issues.** Removed from init — coming soon with proper JSON encoding and portable shell commands.
+5. ✅ **`--schedule` flag is not implemented.** Removed from CLI until implemented.
+6. ✅ **Progress log has no run ID.** Each run now generates a unique run ID included in every progress log entry.
+7. ✅ **`--max-spend` parameter is not implemented.** Use `--max-spend <dollars>` to set a budget cap — the loop stops when cumulative API spend reaches the limit.
+
+## Future Directions
+
+Design ideas and potential improvements — not promises, just directions worth exploring.
+
+1. **Scorer diagnostics** — Before starting a run, optionally run the scorer N times on the current lever to measure signal variance. A noisy scorer wastes iterations; ratchet should warn you before you burn cycles against an unreliable signal. Something like `ratchet diagnose --name classifier --samples 10` that reports mean, stddev, and a go/no-go recommendation.
+
+2. **Composable scorers** — Most real optimization targets are multi-dimensional. A mechanism to define weighted combinations of sub-scorers (e.g. 0.6 × test pass rate + 0.3 × latency + 0.1 × cost) would make ratchet much more practical for production use cases where a single number doesn't capture the full picture.
+
+3. **Scorer templates** — Pre-built scorer templates for common patterns: test suite pass rate, LLM-as-judge (structured, with grading rubrics), latency benchmark, regex match rate, response length constraint. These would lower the floor for new users who know *what* they want to optimize but don't want to write shell scripts from scratch.
+
+4. **Labeled import** — The interactive labeling flow is a genuinely novel idea. Extending it to import from existing eval datasets (CSV, Braintrust, RAGAS, etc.) or hook into CI/CD quality gates would broaden the audience from "people who can write a scorer" to "anyone with an eval dataset."
+
+5. **Efficiency metrics** — Track cost-per-score-delta across iterations. Surface insights like "you spent $0.80 to gain 0.02 this run" to help users decide whether continued optimization is worth it. Pairs naturally with `--max-spend` once that's implemented.
+
+6. **Schedule support** — Nightly cron runs for continuous optimization against live signals: A/B test data, user feedback, production metrics. The `--schedule` flag already exists as a placeholder — filling it in would unlock a genuinely useful workflow where prompts improve overnight without human intervention.
 
 ## License
 
