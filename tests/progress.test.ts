@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { readProgressLog, appendProgress, snapshotLever, type ProgressEntry } from "../src/lib/progress.ts";
+import { readProgressLog, appendProgress, snapshotPrompt, type ProgressEntry } from "../src/lib/progress.ts";
 import { join } from "path";
 import { mkdtemp, rm, mkdir } from "fs/promises";
 import { tmpdir } from "os";
@@ -71,17 +71,17 @@ describe("appendProgress", () => {
   });
 });
 
-describe("snapshotLever", () => {
+describe("snapshotPrompt", () => {
   test("snapshots a single file", async () => {
     await Bun.write(join(tmpDir, "prompt.md"), "Hello world");
-    await snapshotLever(tmpDir, "prompt.md", 1);
+    await snapshotPrompt(tmpDir, "prompt.md", 1);
     const snapshot = await Bun.file(join(tmpDir, ".ratchet/snapshots/1/prompt.md")).text();
     expect(snapshot).toBe("Hello world");
   });
 
   test("creates snapshot for correct iteration number", async () => {
     await Bun.write(join(tmpDir, "prompt.md"), "Iteration 5");
-    await snapshotLever(tmpDir, "prompt.md", 5);
+    await snapshotPrompt(tmpDir, "prompt.md", 5);
     const exists = await Bun.file(join(tmpDir, ".ratchet/snapshots/5/prompt.md")).exists();
     expect(exists).toBe(true);
   });

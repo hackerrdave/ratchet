@@ -253,13 +253,13 @@ describe("progress entry efficiency fields", () => {
       delta: -0.02,
       status: "kept" as const,
       summary: "Compressed redundant instructions",
-      leverTokens: 800,
+      promptTokens: 800,
       phase: "efficiency" as const,
       tokenReduction: 0.20,
     };
 
     expect(entry.phase).toBe("efficiency");
-    expect(entry.leverTokens).toBe(800);
+    expect(entry.promptTokens).toBe(800);
     expect(entry.tokenReduction).toBe(0.20);
   });
 });

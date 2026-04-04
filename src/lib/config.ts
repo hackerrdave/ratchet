@@ -74,7 +74,7 @@ export function parseRatchetMd(content: string): RatchetMdConfig {
       .filter(Boolean);
   };
 
-  // Parse prompt path (was: lever)
+  // Parse prompt path
   const promptText = (sections["prompt"] || "").trim();
   const promptMatch = promptText.match(/(?:file|path)\s+(?:at\s+)?(\S+)/i);
   const promptPath = promptMatch ? promptMatch[1]! : promptText.split("\n")[0]?.trim() || "";

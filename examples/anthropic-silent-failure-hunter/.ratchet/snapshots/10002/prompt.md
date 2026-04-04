@@ -20,31 +20,32 @@ Scan the entire code block line-by-line and identify EVERY silent failure locati
 
 ### Anti-Pattern Checklist
 
-**Empty Catch Block** — `catch { }`, `catch(e) { }`, `catch(e) { return; }` with zero logging
-- Does the catch body contain no logging, no error handling, or only a bare return?
-- Record: Line numbers, exact pattern, what's being hidden
+**Empty Catch Block** — `catch { }`, `catch(e) { }`, or `catch(e) { return; }` with zero logging
+- Is the catch body literally empty or contains only a return with no logging?
+- Record: Line numbers, pattern name, what's being hidden
 
-**Promise Swallowing** — `.catch(() => {})`, `.catch(e => {})`, `.catch(() => undefined)` with completely empty handler
-- Does code silently discard promise rejections without logging?
+**Promise Swallowing** — `.catch(() => {})`, `.catch(e => {})`, `.catch(_ => {})`, `.catch(() => undefined)` with completely empty handler
+- Does code silently discard promise rejections?
 - Record: Line numbers, exact catch syntax, what errors are discarded
 
-**Count-Only Logging** — Catch blocks that only do `count++`/`failed++`, or filter Promise.allSettled results without capturing failure details
-- Are error details (messages, reasons, IDs) discarded? Does code log aggregate stats without listing failures?
+**Count-Only Logging** — Catch blocks that only do `count++`, `failed++`, or filter/count Promise.allSettled results without capturing failure details
+- Are error details (messages, reasons, affected IDs) discarded?
+- Does code log aggregate stats like "Synced 50/100" without listing failures?
 - Record: Line numbers, what information is lost
 
 **Silent Early Return** — `if (!data) return;` or similar guards without logging, when the condition could mask an error
 - Does code return early on falsy values without distinguishing "legitimate absence" from "error occurred"?
 - Record: Line numbers, what error is being masked
 
-**Unhandled Operations in Catch** — Catch blocks that call async functions, I/O, or database operations without their own try/catch
-- Does the catch block contain `db.update()`, `fetch()`, `fs.writeFile()`, or similar that could fail unhandled?
+**Unhandled Operations in Catch** — Catch blocks that call async functions, I/O operations, or database calls without their own try/catch
+- Does the catch block contain `db.update()`, `fetch()`, `fs.writeFile()`, or similar that could fail?
 - Record: Line numbers, operations at risk
 
-**Silent Fallback Without Logging** — Catch block returns a default value, mocked data, or empty collection without logging the error
-- Does code fall back to defaults, stubs, or `??` without logging?
+**Silent Fallback Without Logging** — Catch block returns a default value, mocked data, or empty collection without logging the error occurred
+- Does code fall back to defaults, stubs, or `??` with a default without logging?
 - Record: Line numbers, what fallback is used
 
-**Insufficient/Wrong Logging** — Catch block uses `console.log()` instead of `logError()`, or logs without error object/message/stack
+**Insufficient/Wrong Logging** — Catch block uses `console.log()` instead of `logError()`, or logs without the actual error object/message/stack
 - Is the error logged with full context (user IDs, operation name, error details)?
 - Record: Line numbers, what context is missing
 
@@ -73,21 +74,22 @@ After completing Phase 1 exhaustively, assess each finding:
 
 ### Severity Classification
 
-**CRITICAL** — Silent failure in critical path, empty catch, `.catch(() => {})`, broad catch with no logging, or operations affecting core business logic (payments, auth, data integrity):
+**CRITICAL** (Silent failure in critical path, empty catch, .catch(() => {}), broad catch with no logging):
 - Empty catch blocks returning null/undefined
 - `.catch(() => {})` patterns swallowing promise rejections
-- Broad exception catching with zero logging
+- Catch blocks that catch broad error types with zero logging
+- Operations affecting core business logic (payments, auth, data integrity) with silent fallbacks
 - Count-only logging in mission-critical batch operations
 
-**HIGH** — Poor error information, unjustified fallback, or operations that could fail unhandled:
+**HIGH** (Poor error information, unjustified fallback, error counting without details):
 - Silent fallbacks to defaults without logging
 - Error counting that discards failure reasons
 - Catch blocks using console.log instead of structured logging
 - Operations in catch blocks that could fail unhandled
-- Insufficient error context (missing IDs, operation names)
+- Insufficient error context in logging (missing IDs, operation names)
 - Silent early returns that could mask errors
 
-**MEDIUM** — Could be more specific, partial information, or unclear fallback paths:
+**MEDIUM** (Could be more specific, partial information):
 - Generic error messages without enough context
 - Catch blocks that differentiate error types but log minimally
 - Fallback chains where the path taken isn't clear from logging
@@ -117,20 +119,28 @@ For each issue, show exact corrected code with:
 
 - **Optional chaining for display-only operations**: Using `?.` to safely navigate optional properties in pure, side-effect-free functions is acceptable. Example: `user?.profile?.displayName ?? user?.email?.split('@')[0] ?? 'Anonymous'` is fine for display name resolution with no side effects.
 
-- **Intentional fallback to well-documented safe defaults**: Catch blocks that deliberately fall back to defaults with error type differentiation, explicit logging or self-evident safety, and non-critical operations. Example: `catch (error) { if (error.code === 'ENOENT') return DEFAULT_CONFIG; throw error; }` is acceptable.
+- **Intentional fallback to well-documented safe defaults**: Catch blocks that deliberately fall back to defaults AND:
+  - The operation is non-critical (config loading where missing config → defaults is documented)
+  - Error types are differentiated (catching ENOENT separately from other errors)
+  - The fallback is explicitly logged or self-evident
+  - Example: `catch (error) { if (error.code === 'ENOENT') return DEFAULT_CONFIG; throw error; }` with appropriate logging is acceptable.
 
-- **Error counting in batch operations WITH details captured**: If Promise.allSettled results are examined AND the code separately captures failure details (error messages, failed item IDs, rejection reasons), this is acceptable. Counting succeeded items AND separately logging all failed items with errors is fine.
+- **Error counting in batch operations WITH details captured**: If Promise.allSettled results are examined for counts BUT the code separately captures failure details (error messages, failed item IDs, rejection reasons), this is NOT a silent failure. Counter-example: Counting succeeded items AND separately logging all failed items with errors is fine. Just counting succeeded is not.
 
-- **Early returns for legitimate guards**: An early return like `if (!user) return;` is acceptable only if this is a guard against truly optional input (optional notification preferences) and represents an expected, non-error state — not masking a required operation failure.
+- **Early returns for legitimate guards**: An early return like `if (!user) return;` is acceptable ONLY if:
+  - This is a guard against truly optional input (optional notification preferences)
+  - The condition represents an expected, non-error state (user does not exist, preferences not set)
+  - This is not masking a required operation failure
+  - Note: If the lookup *failed* (threw an error) vs. legitimately returned null, these are different — failures must be caught and logged.
 
-- **Proper error handlers with structured logging**: Handlers that use appropriate logging functions (not just `console.log`), include context, and differentiate error types are acceptable.
+- **Proper error handlers with structured logging**: Handlers that use appropriate logging functions (not just `console.log`), include context, and differentiate error types are acceptable even without a unique error ID in every case.
 
 **Always flag these — never acceptable:**
 - Empty catch blocks with no logging, no return, no rethrow
 - `.catch(() => {})` patterns that discard promise rejections
-- Catch blocks that only count errors without capturing details
-- Operations inside catch blocks (like `db.update`) that have unhandled errors
-- Retrying permanent errors without distinguishing from transient errors
+- Catch blocks that catch errors but only count them without capturing details
+- Operations inside catch blocks (like `db.update`) that have their own unhandled errors
+- Retrying errors that are permanent without distinguishing from transient errors
 
 ## Your Output Format
 
@@ -161,7 +171,7 @@ Project-specific patterns:
 - Error IDs should come from constants/errorIds.ts
 - The project explicitly forbids silent failures in production code
 - Empty catch blocks are never acceptable
-- `.catch(() => {})` patterns are never acceptable
+- .catch(() => {}) patterns are never acceptable
 
 Context: {{context}}
 

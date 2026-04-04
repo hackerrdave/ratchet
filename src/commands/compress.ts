@@ -11,7 +11,7 @@ import {
 } from "../lib/config.ts";
 import { runJudge } from "../lib/judge.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
-import { appendProgress, snapshotLever, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
+import { appendProgress, snapshotPrompt, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
 import { runCompressAgent } from "../lib/agent.ts";
 import { countTokens, getTokenStats } from "../lib/tokens.ts";
 import { generateRunId } from "../lib/state.ts";
@@ -208,7 +208,7 @@ export async function compressCommand(options: CompressOptions) {
         await writeWatermark(cwd, watermark);
       }
 
-      await snapshotLever(cwd, config.prompt, 10000 + i);
+      await snapshotPrompt(cwd, config.prompt, 10000 + i);
 
       const bestFileName = config.prompt.split("/").pop() || "prompt";
       await Bun.write(join(cwd, BEST_DIR, bestFileName), agentResult.newContent);
@@ -219,7 +219,7 @@ export async function compressCommand(options: CompressOptions) {
         status: "kept", summary: agentResult.summary,
         inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
         outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
-        cost: iterCost, leverTokens: newTokens,
+        cost: iterCost, promptTokens: newTokens,
         phase: "efficiency", tokenReduction,
       };
       await appendProgress(cwd, entry);
@@ -248,7 +248,7 @@ export async function compressCommand(options: CompressOptions) {
         status: "discarded", summary: agentResult.summary,
         inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
         outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
-        cost: iterCost, leverTokens: newTokens,
+        cost: iterCost, promptTokens: newTokens,
         phase: "efficiency", tokenReduction,
       };
       await appendProgress(cwd, entry);

@@ -10,7 +10,7 @@ import {
 } from "../lib/config.ts";
 import { runJudge } from "../lib/judge.ts";
 import { readWatermark, writeWatermark } from "../lib/watermark.ts";
-import { appendProgress, snapshotLever, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
+import { appendProgress, snapshotPrompt, snapshotOriginal, type ProgressEntry } from "../lib/progress.ts";
 import { runAgent } from "../lib/agent.ts";
 import { extractLearnings } from "../lib/learnings.ts";
 import { readState, writeState, clearState, generateRunId } from "../lib/state.ts";
@@ -199,7 +199,7 @@ export async function startCommand(options: StartOptions) {
         score: watermark, prevScore: watermark, delta: 0,
         status: "discarded", summary: `Judge error: ${err}`,
         inputTokens: agentResult.inputTokens, outputTokens: agentResult.outputTokens,
-        cost: iterCost, leverTokens: countTokens(agentResult.newContent, model),
+        cost: iterCost, promptTokens: countTokens(agentResult.newContent, model),
         phase: "quality",
       };
       await appendProgress(cwd, entry);
@@ -223,7 +223,7 @@ export async function startCommand(options: StartOptions) {
     if (delta >= minDelta) {
       watermark = score;
       await writeWatermark(cwd, watermark);
-      await snapshotLever(cwd, config.prompt, i);
+      await snapshotPrompt(cwd, config.prompt, i);
 
       const bestFileName = config.prompt.split("/").pop() || "prompt";
       await Bun.write(join(cwd, BEST_DIR, bestFileName), agentResult.newContent);
@@ -234,7 +234,7 @@ export async function startCommand(options: StartOptions) {
         summary: agentResult.summary,
         inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
         outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
-        cost: iterCost, leverTokens: promptTokens, phase: "quality",
+        cost: iterCost, promptTokens: promptTokens, phase: "quality",
       };
       await appendProgress(cwd, entry);
 
@@ -254,7 +254,7 @@ export async function startCommand(options: StartOptions) {
         summary: agentResult.summary,
         inputTokens: agentResult.inputTokens + judgeResult.inputTokens,
         outputTokens: agentResult.outputTokens + judgeResult.outputTokens,
-        cost: iterCost, leverTokens: promptTokens, phase: "quality",
+        cost: iterCost, promptTokens: promptTokens, phase: "quality",
       };
       await appendProgress(cwd, entry);
 

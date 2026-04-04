@@ -74,12 +74,12 @@ program
 
 program
   .command("show <iteration>")
-  .description("Lever state at a specific iteration")
+  .description("Prompt state at a specific iteration")
   .action(showCommand);
 
 program
   .command("checkout <iteration>")
-  .description("Restore lever to a specific iteration's best state")
+  .description("Restore prompt to a specific iteration's best state")
   .action(checkoutCommand);
 
 program

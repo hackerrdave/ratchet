@@ -18,8 +18,8 @@ export interface ProgressEntry {
   model?: string;
   /** Model used for judging (if different from proposer) */
   judgeModel?: string;
-  /** Token count of the lever itself (for efficiency tracking) */
-  leverTokens?: number;
+  /** Token count of the prompt itself (for efficiency tracking) */
+  promptTokens?: number;
   /** Phase: quality (default) or efficiency */
   phase?: "quality" | "efficiency";
   /** Token reduction percentage (efficiency phase) */
@@ -49,13 +49,13 @@ export async function appendProgress(cwd: string, entry: ProgressEntry): Promise
 
 export async function snapshotOriginal(
   cwd: string,
-  leverPath: string,
+  promptPath: string,
 ): Promise<void> {
   const snapshotDir = join(cwd, SNAPSHOTS_DIR, "original");
   await mkdir(snapshotDir, { recursive: true });
 
-  const sourcePath = join(cwd, leverPath);
-  const filename = leverPath.split("/").pop() || "lever";
+  const sourcePath = join(cwd, promptPath);
+  const filename = promptPath.split("/").pop() || "prompt";
   const destPath = join(snapshotDir, filename);
 
   // Only save if not already present (don't overwrite across runs)
@@ -67,26 +67,26 @@ export async function snapshotOriginal(
   }
 }
 
-export async function snapshotLever(
+export async function snapshotPrompt(
   cwd: string,
-  leverPath: string,
+  promptPath: string,
   iteration: number,
 ): Promise<void> {
   const snapshotDir = join(cwd, SNAPSHOTS_DIR, String(iteration));
   await mkdir(snapshotDir, { recursive: true });
 
-  const sourcePath = join(cwd, leverPath);
+  const sourcePath = join(cwd, promptPath);
   const stat = await Bun.file(sourcePath).exists();
 
   if (stat) {
     const content = await Bun.file(sourcePath).text();
-    const filename = leverPath.split("/").pop() || "lever";
+    const filename = promptPath.split("/").pop() || "prompt";
     await Bun.write(join(snapshotDir, filename), content);
   } else {
     try {
       await cp(sourcePath, snapshotDir, { recursive: true });
     } catch {
-      await Bun.write(join(snapshotDir, "_error.txt"), `Could not snapshot: ${leverPath}`);
+      await Bun.write(join(snapshotDir, "_error.txt"), `Could not snapshot: ${promptPath}`);
     }
   }
 }

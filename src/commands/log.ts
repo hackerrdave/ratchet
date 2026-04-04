@@ -14,7 +14,7 @@ export async function logCommand() {
   const discarded = entries.filter((e) => e.status !== "kept");
   const totalCost = entries.reduce((sum, e) => sum + (e.cost || 0), 0);
   const models = [...new Set(entries.map((e) => e.model).filter(Boolean))];
-  const hasTokens = entries.some((e) => e.leverTokens !== undefined);
+  const hasTokens = entries.some((e) => e.promptTokens !== undefined);
   const hasPhase = entries.some((e) => e.phase !== undefined);
 
   // Summary header
@@ -49,8 +49,8 @@ export async function logCommand() {
 
     // Build the main line
     let meta = `${scoreStr} ${deltaColor}${deltaStr}${c.reset}`;
-    if (hasTokens && e.leverTokens !== undefined) {
-      meta += ` ${c.dim}│${c.reset} ${c.cyan}${e.leverTokens}${c.reset}${c.dim}tok${c.reset}`;
+    if (hasTokens && e.promptTokens !== undefined) {
+      meta += ` ${c.dim}│${c.reset} ${c.cyan}${e.promptTokens}${c.reset}${c.dim}tok${c.reset}`;
     }
     meta += ` ${c.dim}│${c.reset} ${c.dim}${costStr}${c.reset}`;
     if (hasPhase && e.phase) {
@@ -70,18 +70,18 @@ export async function logCommand() {
 
 function printTokenTrajectory(entries: ProgressEntry[]) {
   const keptWithTokens = entries.filter(
-    (e) => e.status === "kept" && e.leverTokens !== undefined
+    (e) => e.status === "kept" && e.promptTokens !== undefined
   );
   if (keptWithTokens.length < 2) return;
 
   const first = keptWithTokens[0]!;
   const last = keptWithTokens[keptWithTokens.length - 1]!;
-  const firstTokens = first.leverTokens!;
-  const lastTokens = last.leverTokens!;
+  const firstTokens = first.promptTokens!;
+  const lastTokens = last.promptTokens!;
   const delta = lastTokens - firstTokens;
   const pct = ((delta / firstTokens) * 100).toFixed(1);
 
-  const tokenValues = keptWithTokens.map((e) => e.leverTokens!);
+  const tokenValues = keptWithTokens.map((e) => e.promptTokens!);
   const min = Math.min(...tokenValues);
   const max = Math.max(...tokenValues);
   const range = max - min || 1;
@@ -99,19 +99,47 @@ function printTokenTrajectory(entries: ProgressEntry[]) {
     ["", `${c.cyan}${sparkline}${c.reset}`],
   ];
 
-  const qualityKept = keptWithTokens.filter((e) => (e.phase || "quality") === "quality");
-  const efficiencyKept = keptWithTokens.filter((e) => e.phase === "efficiency");
+  const phaseRanges = computePhaseRanges(keptWithTokens);
 
-  if (qualityKept.length > 0 && efficiencyKept.length > 0) {
+  if (phaseRanges) {
     items.push([
       `${c.blue}Quality${c.reset}`,
-      `${qualityKept[0]!.leverTokens!} → ${qualityKept[qualityKept.length - 1]!.leverTokens!} tokens ${c.dim}(${qualityKept.length} kept)${c.reset}`,
+      `${phaseRanges.quality.start} → ${phaseRanges.quality.end} tokens ${c.dim}(${phaseRanges.quality.count} kept)${c.reset}`,
     ]);
     items.push([
       `${c.magenta}Efficiency${c.reset}`,
-      `${efficiencyKept[0]!.leverTokens!} → ${efficiencyKept[efficiencyKept.length - 1]!.leverTokens!} tokens ${c.dim}(${efficiencyKept.length} kept)${c.reset}`,
+      `${phaseRanges.efficiency.start} → ${phaseRanges.efficiency.end} tokens ${c.dim}(${phaseRanges.efficiency.count} kept)${c.reset}`,
     ]);
   }
 
   header("Token trajectory", items);
+}
+
+export interface PhaseRange {
+  start: number;
+  end: number;
+  count: number;
+}
+
+/**
+ * Compute token ranges for quality and efficiency phases.
+ * Efficiency start equals quality end (where the phase handed off).
+ * Returns null if both phases aren't present.
+ */
+export function computePhaseRanges(
+  keptWithTokens: ProgressEntry[]
+): { quality: PhaseRange; efficiency: PhaseRange } | null {
+  const qualityKept = keptWithTokens.filter((e) => (e.phase || "quality") === "quality");
+  const efficiencyKept = keptWithTokens.filter((e) => e.phase === "efficiency");
+
+  if (qualityKept.length === 0 || efficiencyKept.length === 0) return null;
+
+  const qualityStart = qualityKept[0]!.promptTokens!;
+  const qualityEnd = qualityKept[qualityKept.length - 1]!.promptTokens!;
+  const efficiencyEnd = efficiencyKept[efficiencyKept.length - 1]!.promptTokens!;
+
+  return {
+    quality: { start: qualityStart, end: qualityEnd, count: qualityKept.length },
+    efficiency: { start: qualityEnd, end: efficiencyEnd, count: efficiencyKept.length },
+  };
 }

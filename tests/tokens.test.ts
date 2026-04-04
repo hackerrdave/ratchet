@@ -3,7 +3,7 @@ import {
   countTokens,
   tokenize,
   getTokenStats,
-  estimateLeverCostPerCall,
+  estimatePromptCostPerCall,
   type DecodedToken,
 } from "../src/lib/tokens.ts";
 
@@ -131,34 +131,34 @@ describe("getTokenStats", () => {
   });
 });
 
-describe("estimateLeverCostPerCall", () => {
+describe("estimatePromptCostPerCall", () => {
   test("haiku is cheapest", () => {
-    const haiku = estimateLeverCostPerCall(1000, "claude-haiku-4-5-20251001");
-    const sonnet = estimateLeverCostPerCall(1000, "claude-sonnet-4-20250514");
-    const opus = estimateLeverCostPerCall(1000, "claude-opus-4-20250514");
+    const haiku = estimatePromptCostPerCall(1000, "claude-haiku-4-5-20251001");
+    const sonnet = estimatePromptCostPerCall(1000, "claude-sonnet-4-20250514");
+    const opus = estimatePromptCostPerCall(1000, "claude-opus-4-20250514");
     expect(haiku).toBeLessThan(sonnet);
     expect(sonnet).toBeLessThan(opus);
   });
 
   test("cost is zero for zero tokens", () => {
-    expect(estimateLeverCostPerCall(0, "claude-haiku-4-5-20251001")).toBe(0);
+    expect(estimatePromptCostPerCall(0, "claude-haiku-4-5-20251001")).toBe(0);
   });
 
   test("cost is positive for positive tokens", () => {
     expect(
-      estimateLeverCostPerCall(100, "claude-haiku-4-5-20251001")
+      estimatePromptCostPerCall(100, "claude-haiku-4-5-20251001")
     ).toBeGreaterThan(0);
   });
 
   test("cost scales linearly with tokens", () => {
-    const cost100 = estimateLeverCostPerCall(100, "claude-haiku-4-5-20251001");
-    const cost200 = estimateLeverCostPerCall(200, "claude-haiku-4-5-20251001");
+    const cost100 = estimatePromptCostPerCall(100, "claude-haiku-4-5-20251001");
+    const cost200 = estimatePromptCostPerCall(200, "claude-haiku-4-5-20251001");
     expect(cost200).toBeCloseTo(cost100 * 2, 10);
   });
 
   test("falls back to haiku pricing for unknown model", () => {
-    const unknown = estimateLeverCostPerCall(1000, "some-unknown-model");
-    const haiku = estimateLeverCostPerCall(1000, "claude-haiku-4-5-20251001");
+    const unknown = estimatePromptCostPerCall(1000, "some-unknown-model");
+    const haiku = estimatePromptCostPerCall(1000, "claude-haiku-4-5-20251001");
     expect(unknown).toBe(haiku);
   });
 });

@@ -61,17 +61,17 @@ describe("accept/reject/rollback logic", () => {
     expect(delta >= minDelta).toBe(true);
   });
 
-  test("rollback restores original lever content", async () => {
-    const leverPath = join(tmpDir, "prompt.md");
+  test("rollback restores original prompt content", async () => {
+    const promptPath = join(tmpDir, "prompt.md");
     const original = "Original content";
-    await Bun.write(leverPath, original);
+    await Bun.write(promptPath, original);
 
     // Simulate agent writing new content
-    await Bun.write(leverPath, "New content");
+    await Bun.write(promptPath, "New content");
 
     // Rollback
-    await Bun.write(leverPath, original);
-    const content = await Bun.file(leverPath).text();
+    await Bun.write(promptPath, original);
+    const content = await Bun.file(promptPath).text();
     expect(content).toBe(original);
   });
 
@@ -108,11 +108,11 @@ describe("accept/reject/rollback logic", () => {
 
 describe("original snapshot", () => {
   test("saves original prompt content to snapshots/original/", async () => {
-    const leverPath = "prompt.md";
+    const promptPath = "prompt.md";
     const originalContent = "This is the original prompt content";
-    await Bun.write(join(tmpDir, leverPath), originalContent);
+    await Bun.write(join(tmpDir, promptPath), originalContent);
 
-    await snapshotOriginal(tmpDir, leverPath);
+    await snapshotOriginal(tmpDir, promptPath);
 
     const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/prompt.md");
     const saved = await Bun.file(snapshotPath).text();
@@ -120,25 +120,25 @@ describe("original snapshot", () => {
   });
 
   test("does not overwrite existing original snapshot", async () => {
-    const leverPath = "prompt.md";
-    await Bun.write(join(tmpDir, leverPath), "first version");
-    await snapshotOriginal(tmpDir, leverPath);
+    const promptPath = "prompt.md";
+    await Bun.write(join(tmpDir, promptPath), "first version");
+    await snapshotOriginal(tmpDir, promptPath);
 
     // Change the prompt and snapshot again
-    await Bun.write(join(tmpDir, leverPath), "second version");
-    await snapshotOriginal(tmpDir, leverPath);
+    await Bun.write(join(tmpDir, promptPath), "second version");
+    await snapshotOriginal(tmpDir, promptPath);
 
     const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/prompt.md");
     const saved = await Bun.file(snapshotPath).text();
     expect(saved).toBe("first version");
   });
 
-  test("handles nested lever paths", async () => {
-    const leverPath = "prompts/system.md";
+  test("handles nested prompt paths", async () => {
+    const promptPath = "prompts/system.md";
     await mkdir(join(tmpDir, "prompts"), { recursive: true });
-    await Bun.write(join(tmpDir, leverPath), "nested prompt");
+    await Bun.write(join(tmpDir, promptPath), "nested prompt");
 
-    await snapshotOriginal(tmpDir, leverPath);
+    await snapshotOriginal(tmpDir, promptPath);
 
     const snapshotPath = join(tmpDir, ".ratchet/snapshots/original/system.md");
     const saved = await Bun.file(snapshotPath).text();

@@ -35,10 +35,10 @@ export function countTokens(text: string, model: string = "gpt-4"): number {
 }
 
 /**
- * Estimate the cost of a prompt (lever content) based on token count.
+ * Estimate the cost of a prompt based on token count.
  * This is the cost *per API call* that includes this content as input.
  */
-export function estimateLeverCostPerCall(
+export function estimatePromptCostPerCall(
   tokenCount: number,
   model: string
 ): number {
@@ -83,6 +83,6 @@ export function getTokenStats(text: string, model: string = "gpt-4"): TokenStats
   const tokenCount = countTokens(text, model);
   return {
     tokenCount,
-    estimatedCostPerCall: estimateLeverCostPerCall(tokenCount, model),
+    estimatedCostPerCall: estimatePromptCostPerCall(tokenCount, model),
   };
 }
