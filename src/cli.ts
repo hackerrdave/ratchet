@@ -40,7 +40,7 @@ program
   .command("tokens")
   .description("Visualize how the LLM tokenizes the prompt (or any file)")
   .option("-f, --file <path>", "File to tokenize (default: prompt from RATCHET.md)")
-  .option("-m, --mode <mode>", "Visualization mode: color|boundary|ids|heatmap|stats", "color")
+  .option("-m, --mode <mode>", "Visualization mode: color|boundary|ids|heatmap|stats|diff", "color")
   .option("--model <model>", "Model for tokenizer selection", "claude-haiku-4-5-20251001")
   .action(tokensCommand);
 

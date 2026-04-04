@@ -1,10 +1,11 @@
 import { join } from "path";
-import { RATCHET_MD, parseRatchetMd } from "../lib/config.ts";
+import { RATCHET_MD, SNAPSHOTS_DIR, parseRatchetMd } from "../lib/config.ts";
 import { countTokens, tokenize, getTokenStats, type DecodedToken } from "../lib/tokens.ts";
+import { c, header as fmtHeader } from "../lib/format.ts";
 
 interface TokensOptions {
   file?: string;
-  mode: "color" | "boundary" | "ids" | "heatmap" | "stats";
+  mode: "color" | "boundary" | "ids" | "heatmap" | "stats" | "diff";
   model: string;
 }
 
@@ -68,6 +69,9 @@ export async function tokensCommand(options: TokensOptions) {
       break;
     case "stats":
       renderStats(tokens, filePath, stats, content);
+      break;
+    case "diff":
+      await renderDiff(cwd, filePath, content, stats, options.model);
       break;
   }
 }
@@ -239,4 +243,87 @@ function renderStats(tokens: DecodedToken[], filePath: string, stats: ReturnType
     console.log(`  ${calls.toLocaleString().padStart(9)} calls → $${cost.toFixed(4)}`);
   }
   console.log();
+}
+
+async function renderDiff(
+  cwd: string,
+  currentPath: string,
+  currentContent: string,
+  currentStats: ReturnType<typeof getTokenStats>,
+  model: string,
+) {
+  // Find original content: try snapshots/original/, then first numbered snapshot
+  const filename = currentPath.split("/").pop() || "prompt";
+  let originalContent: string | null = null;
+  let originalLabel = "";
+
+  const originalPath = join(cwd, SNAPSHOTS_DIR, "original", filename);
+  if (await Bun.file(originalPath).exists()) {
+    originalContent = await Bun.file(originalPath).text();
+    originalLabel = "original";
+  }
+
+  if (!originalContent) {
+    // Fall back to lowest-numbered snapshot
+    const { readdir } = await import("fs/promises");
+    try {
+      const dirs = await readdir(join(cwd, SNAPSHOTS_DIR));
+      const numbered = dirs
+        .filter((d) => /^\d+$/.test(d))
+        .map(Number)
+        .sort((a, b) => a - b);
+      if (numbered.length > 0) {
+        const firstSnap = join(cwd, SNAPSHOTS_DIR, String(numbered[0]), filename);
+        if (await Bun.file(firstSnap).exists()) {
+          originalContent = await Bun.file(firstSnap).text();
+          originalLabel = `iteration ${numbered[0]}`;
+        }
+      }
+    } catch {
+      // no snapshots dir
+    }
+  }
+
+  if (!originalContent) {
+    console.error("No original snapshot found. Run `ratchet start` first to create snapshots.");
+    process.exit(1);
+  }
+
+  const originalStats = getTokenStats(originalContent, model);
+  const tokenDelta = currentStats.tokenCount - originalStats.tokenCount;
+  const pct = originalStats.tokenCount > 0
+    ? ((tokenDelta / originalStats.tokenCount) * 100).toFixed(1)
+    : "N/A";
+  const charDelta = currentContent.length - originalContent.length;
+  const lineDelta = currentContent.split("\n").length - originalContent.split("\n").length;
+  const costDelta = currentStats.estimatedCostPerCall - originalStats.estimatedCostPerCall;
+
+  const sign = (n: number) => (n >= 0 ? `+${n}` : String(n));
+  const deltaColor = tokenDelta < 0 ? c.green : tokenDelta > 0 ? c.yellow : c.dim;
+
+  const items: [string, string][] = [
+    ["From", `${c.dim}${originalLabel}${c.reset} ${c.dim}(${originalStats.tokenCount} tokens)${c.reset}`],
+    ["To", `${c.dim}current${c.reset} ${c.dim}(${currentStats.tokenCount} tokens)${c.reset}`],
+    ["", ""],
+    ["Tokens", `${originalStats.tokenCount} → ${c.bold}${currentStats.tokenCount}${c.reset} ${deltaColor}(${sign(tokenDelta)}, ${tokenDelta >= 0 ? "+" : ""}${pct}%)${c.reset}`],
+    ["Characters", `${originalContent.length} → ${currentContent.length} ${c.dim}(${sign(charDelta)})${c.reset}`],
+    ["Lines", `${originalContent.split("\n").length} → ${currentContent.split("\n").length} ${c.dim}(${sign(lineDelta)})${c.reset}`],
+    ["", ""],
+    ["Cost/call", `$${originalStats.estimatedCostPerCall.toFixed(6)} → $${currentStats.estimatedCostPerCall.toFixed(6)} ${deltaColor}(${costDelta >= 0 ? "+" : ""}$${costDelta.toFixed(6)})${c.reset}`],
+  ];
+
+  // Cost savings projection
+  if (tokenDelta !== 0) {
+    items.push(["", ""]);
+    for (const calls of [1_000, 10_000, 100_000]) {
+      const savings = -costDelta * calls;
+      const savingsColor = savings > 0 ? c.green : c.yellow;
+      items.push([
+        `@ ${calls.toLocaleString()} calls`,
+        `${savingsColor}${savings > 0 ? "-" : "+"}$${Math.abs(savings).toFixed(4)}${c.reset}`,
+      ]);
+    }
+  }
+
+  fmtHeader("Token diff", items);
 }
